@@ -178,7 +178,7 @@ function Shell({ children }: { children: ReactNode }) {
          <div className="mb-6 rounded-lg border border-white/10 bg-white/[0.06] p-3">
           <div className="flex items-center gap-3"><span className="flex size-8 items-center justify-center rounded-md bg-teal-400/15 text-teal-300"><Command size={16} /></span><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">{workspaceSettings?.name || 'FlowMind workspace'}</p><p className="mt-0.5 text-[10px] text-slate-500">Operations control plane</p></div><ChevronDown size={14} className="ml-auto text-slate-500" /></div>
         </div>
-        <nav className="flex-1 space-y-7">
+        <nav className="nav-scroll flex-1 space-y-7">
           {navGroups.map((group) => <div key={group.label}><p className="nav-label">{group.label}</p><div className="mt-2 space-y-1">{group.links.map((item) => { const Icon = item.icon; const active = location === item.href; return <Link key={item.href} href={item.href} data-testid={`link-nav-${item.label.toLowerCase().replaceAll(' ', '-')}`} onClick={() => setMobileOpen(false)} className={cn('nav-item', active && 'nav-item-active')}><Icon size={16} strokeWidth={active ? 2.4 : 1.8} /><span>{item.label}</span></Link>; })}</div></div>)}
         </nav>
         <div className="border-t border-white/10 pt-4">

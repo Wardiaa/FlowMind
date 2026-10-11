@@ -366,6 +366,10 @@
   .nav-item { display: flex; align-items: center; gap: 0.7rem; border-radius: 0.5rem; padding: 0.63rem 0.7rem; color: hsl(var(--sidebar-foreground) / 0.68); font-size: 0.79rem; font-weight: 500; transition: background-color 160ms ease, color 160ms ease, transform 160ms ease; }
   .nav-item:hover { background: hsl(var(--sidebar-accent)); color: hsl(var(--sidebar-foreground)); transform: translateX(2px); }
   .nav-item-active { background: hsl(var(--sidebar-accent)); color: hsl(var(--sidebar-primary)); box-shadow: inset 2px 0 hsl(var(--sidebar-primary)); }
+  .nav-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 0.125rem; scrollbar-width: thin; scrollbar-color: hsl(var(--sidebar-foreground) / 0.22) transparent; }
+  .nav-scroll::-webkit-scrollbar { width: 0.3rem; }
+  .nav-scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: hsl(var(--sidebar-foreground) / 0.22); }
+  .nav-scroll::-webkit-scrollbar-track { background: transparent; }
   .status-pill { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; border-radius: 999px; padding: 0.22rem 0.48rem; font-family: var(--app-font-mono); font-size: 0.57rem; line-height: 1; }
   .status-good { background: hsl(164 47% 93%); color: hsl(163 51% 30%); }
   .status-warn { background: hsl(42 91% 91%); color: hsl(35 69% 34%); }
