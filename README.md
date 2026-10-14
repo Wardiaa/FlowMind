@@ -11,6 +11,7 @@ Highlights:
 - **Streaming agent runs** — agent answers stream token-by-token in the test bench, and the last 50 runs per agent are kept with token counts and latency.
 - **Command center with tools** — the command center can list projects, workflows, agents, pending approvals, recent activity, and search your documents, showing which sources it used.
 - **AI usage analytics** — every Gemini call is recorded to a per-feature ledger (calls, input/output tokens, latency) and summarized on the analytics page.
+- **Bring your own AI key** — workspace members can add a personal Gemini API key (stored encrypted, never shown again) in Settings to run AI features on their own quota instead of the server's shared key. A soft daily-request guard protects the shared key from runaway schedules with a friendly error.
 
 For a walkthrough of each area of the app, see [USER_GUIDE.md](./USER_GUIDE.md). Security notes live in [SECURITY.md](./SECURITY.md).
 
@@ -123,6 +124,7 @@ This walkthrough uses Render (web + API) and Neon (PostgreSQL + Object Storage),
 | `GEMINI_API_KEY` | Google Gemini API key for AI features |
 | `GEMINI_CHAT_MODEL` | Chat model for AI features (default `gemini-3.5-flash-lite`, the largest free quota; `gemini-3-flash-preview` is ~20 free requests/day) |
 | `GEMINI_DAILY_REQUEST_LIMIT` | Soft cap on chat AI requests per rolling 24h (default `1000`; `0` disables) |
+| `FLOWMIND_ENCRYPTION_KEY` | Key-encryption key (any long random string) that enables workspace members' personal Gemini keys; rotate with care |
 
 ## Useful commands
 

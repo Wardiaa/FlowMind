@@ -59,6 +59,8 @@ The Activity log lists recorded workspace events such as agent/workflow runs, pr
 
 Open **Workspace settings** to update the workspace name and timezone and adjust the available review/source-context/digest preferences. These settings affect how the workspace presents dates and how the app handles review preferences.
 
+You can also add a **personal Gemini API key** (from Google AI Studio). AI features then run on your own key and quota instead of the server's shared one. The key is stored encrypted on the server, shown only as a masked hint (for example `AIzaSy…9f2`), and never displayed in full again; you can replace or remove it at any time. Document indexing (embeddings) still uses the server's key when present, and removing your key switches AI features back to the shared key.
+
 ## Account and data
 
 Use **Sign out** in the lower-left account area to end the current session. In the local developer setup, sign-in is a single local account with no password and is not a production authentication method.

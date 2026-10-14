@@ -12,3 +12,7 @@ Please report vulnerabilities privately via the [GitHub Security Advisories](htt
 ## Scope
 
 This policy covers the FlowMind application code in this repository; it does not cover third-party dependencies or hosting providers, which should be reported upstream.
+
+## Personal AI keys (BYOK)
+
+Workspace members' personal Gemini API keys are encrypted at rest with AES-256-GCM using the server's `FLOWMIND_ENCRYPTION_KEY` and are never returned to the browser in full — the API exposes only a masked hint. Keys travel to Google only over TLS when making AI requests. Treat `FLOWMIND_ENCRYPTION_KEY` as a production secret: it lives only in the server environment, and rotating it makes previously stored personal keys unreadable (they are then treated as absent until re-entered).
