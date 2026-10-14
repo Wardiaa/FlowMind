@@ -1,5 +1,18 @@
 import { randomUUID } from "crypto";
-import { db, activityTable, agentsTable, approvalsTable, documentsTable, executionsTable, projectsTable, workflowsTable, workspaceSettingsTable } from "@workspace/db";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import {
+  activityTable,
+  agentRunsTable,
+  agentsTable,
+  aiUsageTable,
+  approvalsTable,
+  db,
+  documentsTable,
+  executionsTable,
+  projectsTable,
+  workflowsTable,
+  workspaceSettingsTable,
+} from "@workspace/db";
 import {
   AnalyzeProjectParams,
   AnalyzeProjectResponse,
@@ -13,12 +26,19 @@ import {
   DecideApprovalParams,
   DecideApprovalResponse,
   DeleteDocumentParams,
+  GetAiUsageQueryParams,
+  GetAiUsageResponse,
   GetDashboardResponse,
   GetWorkspaceSettingsResponse,
   ListActivityResponse,
+  ListAgentRunsParams,
+  ListAgentRunsResponse,
   ListAgentsResponse,
+  ListApprovalsResponse,
   ListDocumentsResponse,
   ListProjectsResponse,
+  ListWorkflowExecutionsParams,
+  ListWorkflowExecutionsResponse,
   ListWorkflowsResponse,
   RunAgentBody,
   RunAgentParams,
@@ -27,16 +47,25 @@ import {
   RunCommandCenterResponse,
   RunWorkflowParams,
   RunWorkflowResponse,
+  SearchDocumentsBody,
+  SearchDocumentsResponse,
   UpdateWorkflowBody,
   UpdateWorkflowParams,
   UpdateWorkflowResponse,
   UpdateWorkspaceSettingsBody,
   UpdateWorkspaceSettingsResponse,
 } from "@workspace/api-zod";
-import { and, desc, eq, sql } from "drizzle-orm";
+import type { ExecutionStep, WorkflowRecord } from "@workspace/db";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { ensureWorkspaceSeeded } from "../lib/flowmindSeed";
-import { generateGeminiAnswer } from "../lib/gemini";
+import { CHAT_MODEL, generateGeminiAnswer, streamGeminiAnswer } from "../lib/gemini";
+import { recordAiUsage } from "../lib/aiUsage";
+import { chunkText } from "../lib/chunking";
+import { nextRun } from "../lib/cron";
+import { backfillWorkspaceContent, ensureWorkspaceSeeded } from "../lib/flowmindSeed";
+import { createNotification } from "../lib/notify";
+import { disableIndexing, indexDocument, searchChunks } from "../lib/retrieval";
+import { runCommandCenter } from "../lib/commandTools";
+import { applyApprovalDecision, asExecutionSteps, startExecution } from "../lib/workflowEngine";
 import { getObjectAclPolicy, ObjectPermission } from "../lib/objectAcl";
 import { ObjectNotFoundError, ObjectStorageService } from "../lib/objectStorage";
 
@@ -56,9 +85,16 @@ router.use((req, res, next) => {
   next();
 });
 
+const backfilledOwners = new Set<string>();
+
 router.use(async (req, res, next) => {
   try {
-    await ensureWorkspaceSeeded(owner(req));
+    const userId = owner(req);
+    await ensureWorkspaceSeeded(userId);
+    if (!backfilledOwners.has(userId)) {
+      backfilledOwners.add(userId);
+      await backfillWorkspaceContent(userId);
+    }
     next();
   } catch (error) {
     next(error);
@@ -91,8 +127,29 @@ function documentDto(row: typeof documentsTable.$inferSelect) {
 
 function workflowDto(row: typeof workflowsTable.$inferSelect) {
   return {
-    id: row.id, name: row.name, trigger: row.trigger, status: row.status,
+    id: row.id, name: row.name, trigger: row.trigger,
+    triggerType: row.triggerType, schedule: row.schedule, webhookToken: row.webhookToken,
+    nextRunAt: row.nextRunAt, lastRunAt: row.lastRunAt,
+    status: row.status,
     runs: row.runs, success: row.success, lastRun: row.lastRun, color: row.color, steps: row.steps,
+  };
+}
+
+function executionDto(row: typeof executionsTable.$inferSelect) {
+  return {
+    id: row.id, workflowId: row.workflowId, status: row.status,
+    triggerSource: row.triggerSource, duration: row.duration, durationMs: row.durationMs,
+    error: row.error, steps: asExecutionSteps(row.steps),
+    startedAt: row.startedAt, finishedAt: row.finishedAt,
+  };
+}
+
+function agentRunDto(row: typeof agentRunsTable.$inferSelect, usage?: { inputTokens: number | null; outputTokens: number | null }) {
+  return {
+    id: row.id, agentId: row.agentId, prompt: row.prompt, answer: row.answer,
+    status: row.status, latencyMs: row.latencyMs,
+    inputTokens: usage?.inputTokens ?? null, outputTokens: usage?.outputTokens ?? null,
+    createdAt: row.createdAt,
   };
 }
 
@@ -127,6 +184,71 @@ async function extractDocumentText(bytes: Buffer, contentType: string): Promise<
     return (await mammoth.extractRawText({ buffer: bytes })).value;
   }
   return bytes.toString("utf8");
+}
+
+async function fallbackDocumentContext(userId: string): Promise<string> {
+  const docs = await db.select({
+    name: documentsTable.name,
+    text: documentsTable.extractedText,
+  }).from(documentsTable).where(and(
+    eq(documentsTable.ownerId, userId),
+    eq(documentsTable.status, "Processed"),
+  )).orderBy(desc(documentsTable.createdAt)).limit(5);
+  let remaining = 10_000;
+  return docs.map((doc) => {
+    const excerpt = (doc.text || "").slice(0, remaining);
+    remaining -= excerpt.length;
+    return excerpt ? `\n\n[Source: ${doc.name}]\n${excerpt}` : "";
+  }).join("");
+}
+
+async function buildDocumentContext(userId: string, query: string): Promise<string> {
+  const search = await searchChunks(userId, query, 6).catch(() => null);
+  if (!search || search.results.length === 0) {
+    return fallbackDocumentContext(userId);
+  }
+  let remaining = 10_000;
+  const parts: string[] = [];
+  for (const hit of search.results) {
+    if (remaining <= 0) break;
+    const content = hit.content.slice(0, remaining);
+    remaining -= content.length;
+    parts.push(`\n\n[Source: ${hit.documentName}]\n${content}`);
+  }
+  return parts.join("");
+}
+
+type AgentSettings = { showSourceContext: boolean | null; pauseBeforeExternalActions: boolean | null };
+
+async function loadAgentSettings(userId: string): Promise<AgentSettings | null> {
+  const [settings] = await db.select({
+    showSourceContext: workspaceSettingsTable.showSourceContext,
+    pauseBeforeExternalActions: workspaceSettingsTable.pauseBeforeExternalActions,
+  }).from(workspaceSettingsTable).where(eq(workspaceSettingsTable.ownerId, userId));
+  return settings ?? null;
+}
+
+function agentPrompt(agent: typeof agentsTable.$inferSelect, settings: AgentSettings | null, context: string, prompt: string): string {
+  return `You are FlowMind's ${agent.name}, an AI agent specialized in ${agent.type}.\n` +
+    `Instructions: ${agent.description}\nAvailable tools are names only; do not claim to have performed an external action: ${agent.tools.join(", ")}.\n` +
+    `Workspace policy: pauseBeforeExternalActions=${settings?.pauseBeforeExternalActions ?? true}. Do not perform or claim external actions; this agent has no connected external services.\n` +
+    `Use the following private workspace document excerpts as source context when relevant. If the sources do not answer something, say so.\n${context}\n\nUser request:\n${prompt}`;
+}
+
+async function persistAgentRun(input: {
+  userId: string;
+  agentId: string;
+  prompt: string;
+  answer: string | null;
+  status: "completed" | "failed";
+  latencyMs: number | null;
+}): Promise<string> {
+  const runId = randomUUID();
+  await db.insert(agentRunsTable).values({
+    id: runId, ownerId: input.userId, agentId: input.agentId,
+    prompt: input.prompt, answer: input.answer, status: input.status, latencyMs: input.latencyMs,
+  });
+  return runId;
 }
 
 router.get("/dashboard", async (req, res, next) => {
@@ -189,46 +311,124 @@ router.post("/agents", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+async function prepareAgentRun(req: Request, res: Response) {
+  const userId = owner(req);
+  const { id } = RunAgentParams.parse(req.params);
+  const body = RunAgentBody.parse(req.body);
+  const prompt = body.prompt.trim();
+  if (prompt.length > 10_000) {
+    res.status(400).json({ error: "Keep prompts under 10,000 characters." });
+    return null;
+  }
+  const [agent] = await db.select().from(agentsTable).where(and(eq(agentsTable.id, id), eq(agentsTable.ownerId, userId)));
+  if (!agent) {
+    res.status(404).json({ error: "Agent not found." });
+    return null;
+  }
+  return { userId, agent, prompt, settings: await loadAgentSettings(userId) };
+}
+
 router.post("/agents/:id/run", async (req, res, next) => {
   try {
-    const userId = owner(req);
-    const { id } = RunAgentParams.parse(req.params);
-    const body = RunAgentBody.parse(req.body);
-    if (body.prompt.trim().length > 10_000) {
-      res.status(400).json({ error: "Keep prompts under 10,000 characters." });
-      return;
+    const prepared = await prepareAgentRun(req, res);
+    if (!prepared) return;
+    const { userId, agent, prompt, settings } = prepared;
+    const startedAt = Date.now();
+    try {
+      const context = settings?.showSourceContext === false ? "" : await buildDocumentContext(userId, prompt);
+      const { answer, usage, latencyMs } = await generateGeminiAnswer(agentPrompt(agent, settings, context, prompt));
+      const runId = await persistAgentRun({ userId, agentId: agent.id, prompt, answer, status: "completed", latencyMs });
+      await recordAiUsage(userId, {
+        feature: "agent_run", model: CHAT_MODEL,
+        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, latencyMs, refId: runId,
+      });
+      const event = await recordActivity(userId, {
+        title: agent.name, action: "completed an AI run", detail: prompt.slice(0, 120),
+        status: "Completed", color: agent.color,
+      });
+      await db.update(agentsTable).set({ runs: agent.runs + 1 }).where(and(eq(agentsTable.id, agent.id), eq(agentsTable.ownerId, userId)));
+      res.json(RunAgentResponse.parse({ answer, activityId: event.id, runId }));
+    } catch (error) {
+      await persistAgentRun({
+        userId, agentId: agent.id, prompt, answer: null, status: "failed",
+        latencyMs: Date.now() - startedAt,
+      });
+      throw error;
     }
-    const [agent] = await db.select().from(agentsTable).where(and(eq(agentsTable.id, id), eq(agentsTable.ownerId, userId)));
-    if (!agent) { res.status(404).json({ error: "Agent not found." }); return; }
-    const [settings] = await db.select({
-      showSourceContext: workspaceSettingsTable.showSourceContext,
-      pauseBeforeExternalActions: workspaceSettingsTable.pauseBeforeExternalActions,
-    }).from(workspaceSettingsTable).where(eq(workspaceSettingsTable.ownerId, userId));
-    const docs = settings?.showSourceContext ? await db.select({
-      name: documentsTable.name,
-      text: documentsTable.extractedText,
-    }).from(documentsTable).where(and(
-      eq(documentsTable.ownerId, userId),
-      eq(documentsTable.status, "Processed"),
-    )).orderBy(desc(documentsTable.createdAt)).limit(5) : [];
-    let remaining = 10_000;
-    const context = docs.map((doc) => {
-      const excerpt = (doc.text || "").slice(0, remaining);
-      remaining -= excerpt.length;
-      return excerpt ? `\n\n[Source: ${doc.name}]\n${excerpt}` : "";
-    }).join("");
-    const answer = await generateGeminiAnswer(
-      `You are FlowMind's ${agent.name}, an AI agent specialized in ${agent.type}.\n` +
-      `Instructions: ${agent.description}\nAvailable tools are names only; do not claim to have performed an external action: ${agent.tools.join(", ")}.\n` +
-      `Workspace policy: pauseBeforeExternalActions=${settings?.pauseBeforeExternalActions ?? true}. Do not perform or claim external actions; this agent has no connected external services.\n` +
-      `Use the following private workspace document excerpts as source context when relevant. If the sources do not answer something, say so.\n${context}\n\nUser request:\n${body.prompt.trim()}`,
-    );
-    const event = await recordActivity(userId, {
-      title: agent.name, action: "completed an AI run", detail: body.prompt.trim().slice(0, 120),
-      status: "Completed", color: agent.color,
+  } catch (error) { next(error); }
+});
+
+router.post("/agents/:id/run/stream", async (req, res, next) => {
+  try {
+    const prepared = await prepareAgentRun(req, res);
+    if (!prepared) return;
+    const { userId, agent, prompt, settings } = prepared;
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     });
-    await db.update(agentsTable).set({ runs: agent.runs + 1 }).where(and(eq(agentsTable.id, id), eq(agentsTable.ownerId, userId)));
-    res.json(RunAgentResponse.parse({ answer, activityId: event.id }));
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const runId = randomUUID();
+    await db.insert(agentRunsTable).values({
+      id: runId, ownerId: userId, agentId: agent.id, prompt, answer: null,
+      status: "failed", latencyMs: null,
+    });
+    send("meta", { runId });
+
+    let answer = "";
+    const startedAt = Date.now();
+    try {
+      const context = settings?.showSourceContext === false ? "" : await buildDocumentContext(userId, prompt);
+      const { usage, latencyMs } = await streamGeminiAnswer(agentPrompt(agent, settings, context, prompt), (delta) => {
+        answer += delta;
+        send("delta", { text: delta });
+      });
+      await db.update(agentRunsTable).set({ answer, status: "completed", latencyMs }).where(eq(agentRunsTable.id, runId));
+      await recordAiUsage(userId, {
+        feature: "agent_run", model: CHAT_MODEL,
+        inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, latencyMs, refId: runId,
+      });
+      await recordActivity(userId, {
+        title: agent.name, action: "completed an AI run", detail: prompt.slice(0, 120),
+        status: "Completed", color: agent.color,
+      });
+      await db.update(agentsTable).set({ runs: agent.runs + 1 }).where(and(eq(agentsTable.id, agent.id), eq(agentsTable.ownerId, userId)));
+      send("done", { runId, latencyMs, usage });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The AI run failed.";
+      await db.update(agentRunsTable).set({ status: "failed", latencyMs: Date.now() - startedAt }).where(eq(agentRunsTable.id, runId));
+      send("error", { message });
+    } finally {
+      res.end();
+    }
+  } catch (error) { next(error); }
+});
+
+router.get("/agents/:id/runs", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const { id } = ListAgentRunsParams.parse(req.params);
+    const runs = await db.select().from(agentRunsTable)
+      .where(and(eq(agentRunsTable.ownerId, userId), eq(agentRunsTable.agentId, id)))
+      .orderBy(desc(agentRunsTable.createdAt)).limit(50);
+    const usageRows = runs.length > 0 ? await db.select({
+      refId: aiUsageTable.refId,
+      inputTokens: aiUsageTable.inputTokens,
+      outputTokens: aiUsageTable.outputTokens,
+    }).from(aiUsageTable).where(and(
+      eq(aiUsageTable.ownerId, userId),
+      eq(aiUsageTable.feature, "agent_run"),
+      gte(aiUsageTable.createdAt, runs[runs.length - 1].createdAt),
+    )) : [];
+    const usageByRun = new Map(usageRows.map((row) => [row.refId, row]));
+    res.json(ListAgentRunsResponse.parse({
+      items: runs.map((run) => agentRunDto(run, usageByRun.get(run.id))),
+    }));
   } catch (error) { next(error); }
 });
 
@@ -239,14 +439,47 @@ router.get("/workflows", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+function resolveTriggerFields(input: { triggerType?: string; schedule?: string | null }, current: WorkflowRecord) {
+  const triggerType = input.triggerType ?? current.triggerType;
+  if (triggerType !== "manual" && triggerType !== "schedule" && triggerType !== "webhook") {
+    throw Object.assign(new Error("Trigger type must be manual, schedule, or webhook."), { status: 400 });
+  }
+  const schedule = triggerType === "schedule" ? (input.schedule !== undefined ? input.schedule : current.schedule) : null;
+  let nextRunAt: Date | null = null;
+  if (triggerType === "schedule") {
+    if (!schedule || typeof schedule !== "string") {
+      throw Object.assign(new Error("A cron schedule is required for scheduled workflows."), { status: 400 });
+    }
+    try {
+      nextRunAt = nextRun(schedule);
+    } catch {
+      throw Object.assign(new Error(`"${schedule}" is not a valid cron expression. Use five fields, e.g. "0 9 * * 1".`), { status: 400 });
+    }
+  }
+  return { triggerType, schedule, nextRunAt };
+}
+
 router.post("/workflows", async (req, res, next) => {
   try {
     const userId = owner(req);
     const body = CreateWorkflowBody.parse(req.body);
-    const [row] = await db.insert(workflowsTable).values({
+    const draft = {
       id: randomUUID(), ownerId: userId, name: body.name.trim(), trigger: body.trigger.trim(),
+      triggerType: body.triggerType ?? "manual", schedule: body.schedule ?? null, webhookToken: null,
+      nextRunAt: null, lastRunAt: null,
       status: body.status ?? "Draft", runs: 0, success: "—", lastRun: "Never",
       color: "#55b8a5", steps: body.steps?.length ? body.steps : ["Review the trigger", "Prepare a result", "Pause for human approval"],
+    } as WorkflowRecord & { webhookToken: string | null };
+    const resolved = resolveTriggerFields(
+      { triggerType: draft.triggerType, schedule: draft.schedule },
+      { ...draft, triggerType: "manual", schedule: null } as WorkflowRecord,
+    );
+    const [row] = await db.insert(workflowsTable).values({
+      ...draft,
+      triggerType: resolved.triggerType,
+      schedule: resolved.schedule,
+      nextRunAt: resolved.nextRunAt,
+      webhookToken: resolved.triggerType === "webhook" ? randomUUID() : null,
     }).returning();
     res.status(201).json(CreateWorkflowResponse.parse(workflowDto(row)));
   } catch (error) { next(error); }
@@ -257,13 +490,20 @@ router.patch("/workflows/:id", async (req, res, next) => {
     const userId = owner(req);
     const { id } = UpdateWorkflowParams.parse(req.params);
     const body = UpdateWorkflowBody.parse(req.body);
+    const [existing] = await db.select().from(workflowsTable).where(and(eq(workflowsTable.id, id), eq(workflowsTable.ownerId, userId)));
+    if (!existing) { res.status(404).json({ error: "Workflow not found." }); return; }
+    const resolved = resolveTriggerFields(body, existing);
     const [row] = await db.update(workflowsTable).set({
       ...(body.name !== undefined ? { name: body.name.trim() } : {}),
       ...(body.trigger !== undefined ? { trigger: body.trigger.trim() } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
       ...(body.steps !== undefined ? { steps: body.steps } : {}),
+      triggerType: resolved.triggerType,
+      schedule: resolved.schedule,
+      nextRunAt: resolved.nextRunAt,
+      ...(resolved.triggerType === "webhook" && !existing.webhookToken ? { webhookToken: randomUUID() } : {}),
+      ...(resolved.triggerType !== "webhook" ? { webhookToken: null } : {}),
+      ...(body.status !== undefined ? { status: body.status } : {}),
     }).where(and(eq(workflowsTable.id, id), eq(workflowsTable.ownerId, userId))).returning();
-    if (!row) { res.status(404).json({ error: "Workflow not found." }); return; }
     res.json(UpdateWorkflowResponse.parse(workflowDto(row)));
   } catch (error) { next(error); }
 });
@@ -275,20 +515,20 @@ router.post("/workflows/:id/run", async (req, res, next) => {
     const [workflow] = await db.select().from(workflowsTable).where(and(eq(workflowsTable.id, id), eq(workflowsTable.ownerId, userId)));
     if (!workflow) { res.status(404).json({ error: "Workflow not found." }); return; }
     if (workflow.status === "Paused") { res.status(409).json({ error: "This workflow is paused. Update its status before running it." }); return; }
-    const executionId = randomUUID();
-    const duration = "0.2s";
-    await db.insert(executionsTable).values({
-      id: executionId, ownerId: userId, workflowId: id, status: "Completed", duration, steps: workflow.steps,
-    });
-    await db.update(workflowsTable).set({
-      runs: workflow.runs + 1, lastRun: "Just now",
-    }).where(and(eq(workflowsTable.id, id), eq(workflowsTable.ownerId, userId)));
-    await recordActivity(userId, {
-      title: workflow.name, action: "completed workflow test",
-      detail: `${workflow.steps.length} configured steps · ${duration}`,
-      status: "Completed", color: workflow.color,
-    });
-    res.json(RunWorkflowResponse.parse({ id: executionId, workflowId: id, status: "Completed", duration, steps: workflow.steps }));
+    const executionId = await startExecution(workflow, userId, { triggerSource: "manual" });
+    const [execution] = await db.select().from(executionsTable).where(eq(executionsTable.id, executionId));
+    res.status(202).json(RunWorkflowResponse.parse(executionDto(execution)));
+  } catch (error) { next(error); }
+});
+
+router.get("/workflows/:id/executions", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const { id } = ListWorkflowExecutionsParams.parse(req.params);
+    const rows = await db.select().from(executionsTable)
+      .where(and(eq(executionsTable.ownerId, userId), eq(executionsTable.workflowId, id)))
+      .orderBy(desc(executionsTable.startedAt)).limit(50);
+    res.json(ListWorkflowExecutionsResponse.parse({ items: rows.map(executionDto) }));
   } catch (error) { next(error); }
 });
 
@@ -305,10 +545,14 @@ router.post("/projects/:id/analyze", async (req, res, next) => {
     const { id } = AnalyzeProjectParams.parse(req.params);
     const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.ownerId, userId)));
     if (!project) { res.status(404).json({ error: "Project not found." }); return; }
-    const answer = await generateGeminiAnswer(
+    const { answer, usage, latencyMs } = await generateGeminiAnswer(
       `Act as a concise project operations analyst. Analyze this workspace project and give: current status, top risks, and 3 practical next steps. Do not invent activity not in the data.\n` +
       JSON.stringify({ name: project.name, progress: project.progress, taskCount: project.tasks, owner: project.owner, due: project.due, health: project.health }),
     );
+    await recordAiUsage(userId, {
+      feature: "project_analysis", model: CHAT_MODEL,
+      inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, latencyMs, refId: project.id,
+    });
     await recordActivity(userId, { title: "Project Agent", action: "analyzed project", detail: project.name, status: "Insight", color: project.color });
     res.json(AnalyzeProjectResponse.parse({ answer }));
   } catch (error) { next(error); }
@@ -318,6 +562,19 @@ router.get("/documents", async (req, res, next) => {
   try {
     const rows = await db.select().from(documentsTable).where(eq(documentsTable.ownerId, owner(req))).orderBy(desc(documentsTable.createdAt));
     res.json(ListDocumentsResponse.parse(rows.map(documentDto)));
+  } catch (error) { next(error); }
+});
+
+router.post("/documents/search", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const body = SearchDocumentsBody.parse(req.body);
+    if (body.query.trim().length > 2_000) {
+      res.status(400).json({ error: "Keep search queries under 2,000 characters." });
+      return;
+    }
+    const search = await searchChunks(userId, body.query.trim(), body.topK ?? 6);
+    res.json(SearchDocumentsResponse.parse(search));
   } catch (error) { next(error); }
 });
 
@@ -358,6 +615,11 @@ router.post("/documents", async (req, res, next) => {
       contentType: body.contentType, extractedText,
     };
     const [created] = await db.insert(documentsTable).values(row).returning();
+    try {
+      await indexDocument(userId, created.id, extractedText);
+    } catch (error) {
+      disableIndexing(error);
+    }
     await recordActivity(userId, { title: "Document Agent", action: "processed", detail: body.name, status: "Completed", color: row.color });
     res.status(201).json(CreateDocumentResponse.parse(documentDto(created)));
   } catch (error) {
@@ -395,6 +657,20 @@ router.get("/activity", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.get("/approvals", async (req, res, next) => {
+  try {
+    const rows = await db.select().from(approvalsTable).where(eq(approvalsTable.ownerId, owner(req)))
+      .orderBy(desc(approvalsTable.createdAt)).limit(100);
+    res.json(ListApprovalsResponse.parse({
+      items: rows.map((row) => ({
+        id: row.id, agent: row.agent, title: row.title, excerpt: row.excerpt,
+        draft: row.draft, status: row.status,
+        executionId: row.executionId, workflowId: row.workflowId, stepIndex: row.stepIndex,
+      })),
+    }));
+  } catch (error) { next(error); }
+});
+
 router.patch("/approvals/:id/decision", async (req, res, next) => {
   try {
     const userId = owner(req);
@@ -409,9 +685,51 @@ router.patch("/approvals/:id/decision", async (req, res, next) => {
       title: approval.agent, action: body.status === "Approved" ? "approved an action" : "rejected an action",
       detail: approval.title, status: body.status, color: "#55b8a5",
     });
+    await createNotification(userId, {
+      kind: "approval_decision",
+      title: `${approval.agent}: ${body.status.toLowerCase()}`,
+      body: approval.title,
+      href: approval.workflowId ? `/workflows/${approval.workflowId}` : "/approvals",
+    });
+    await applyApprovalDecision(approval, body.status);
     res.json(DecideApprovalResponse.parse({
       id: approval.id, agent: approval.agent, title: approval.title,
       excerpt: approval.excerpt, draft: approval.draft, status: approval.status,
+      executionId: approval.executionId, workflowId: approval.workflowId, stepIndex: approval.stepIndex,
+    }));
+  } catch (error) { next(error); }
+});
+
+router.get("/analytics/ai-usage", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const parsed = GetAiUsageQueryParams.parse(req.query);
+    const days = parsed.days ?? 14;
+    const since = new Date(Date.now() - days * 86_400_000);
+    const where = and(eq(aiUsageTable.ownerId, userId), gte(aiUsageTable.createdAt, since));
+    const [totals] = await db.select({
+      calls: sql<number>`count(*)::int`,
+      inputTokens: sql<number>`coalesce(sum(${aiUsageTable.inputTokens}), 0)::int`,
+      outputTokens: sql<number>`coalesce(sum(${aiUsageTable.outputTokens}), 0)::int`,
+    }).from(aiUsageTable).where(where);
+    const byFeature = await db.select({
+      feature: aiUsageTable.feature,
+      calls: sql<number>`count(*)::int`,
+      inputTokens: sql<number>`coalesce(sum(${aiUsageTable.inputTokens}), 0)::int`,
+      outputTokens: sql<number>`coalesce(sum(${aiUsageTable.outputTokens}), 0)::int`,
+    }).from(aiUsageTable).where(where).groupBy(aiUsageTable.feature);
+    const daily = await db.select({
+      date: sql<string>`to_char(date_trunc('day', ${aiUsageTable.createdAt}), 'YYYY-MM-DD')`,
+      calls: sql<number>`count(*)::int`,
+      inputTokens: sql<number>`coalesce(sum(${aiUsageTable.inputTokens}), 0)::int`,
+      outputTokens: sql<number>`coalesce(sum(${aiUsageTable.outputTokens}), 0)::int`,
+    }).from(aiUsageTable).where(where)
+      .groupBy(sql`date_trunc('day', ${aiUsageTable.createdAt})`)
+      .orderBy(sql`date_trunc('day', ${aiUsageTable.createdAt})`);
+    res.json(GetAiUsageResponse.parse({
+      totals: totals ?? { calls: 0, inputTokens: 0, outputTokens: 0 },
+      byFeature,
+      daily,
     }));
   } catch (error) { next(error); }
 });
@@ -443,22 +761,14 @@ router.post("/command", async (req, res, next) => {
   try {
     const userId = owner(req);
     const body = RunCommandCenterBody.parse(req.body);
-    if (body.prompt.trim().length > 10_000) {
+    const prompt = body.prompt.trim();
+    if (prompt.length > 10_000) {
       res.status(400).json({ error: "Keep prompts under 10,000 characters." });
       return;
     }
-    const [agents, workflows, projects, approvals] = await Promise.all([
-      db.select({ name: agentsTable.name, status: agentsTable.status, runs: agentsTable.runs }).from(agentsTable).where(eq(agentsTable.ownerId, userId)),
-      db.select({ name: workflowsTable.name, status: workflowsTable.status, runs: workflowsTable.runs }).from(workflowsTable).where(eq(workflowsTable.ownerId, userId)),
-      db.select({ name: projectsTable.name, health: projectsTable.health, progress: projectsTable.progress, due: projectsTable.due }).from(projectsTable).where(eq(projectsTable.ownerId, userId)),
-      db.select({ title: approvalsTable.title, agent: approvalsTable.agent, status: approvalsTable.status }).from(approvalsTable).where(eq(approvalsTable.ownerId, userId)).limit(10),
-    ]);
-    const answer = await generateGeminiAnswer(
-      `You are FlowMind's workspace command center. Answer based only on this workspace data. Be clear about unknowns, and never claim to trigger external actions.\n` +
-      `Workspace data: ${JSON.stringify({ agents, workflows, projects, approvals })}\n\nUser request:\n${body.prompt.trim()}`,
-    );
-    await recordActivity(userId, { title: "Command center", action: "answered a question", detail: body.prompt.trim().slice(0, 120), status: "Insight", color: "#55b8a5" });
-    res.json(RunCommandCenterResponse.parse({ answer }));
+    const { answer, toolCalls } = await runCommandCenter(userId, prompt);
+    await recordActivity(userId, { title: "Command center", action: "answered a question", detail: prompt.slice(0, 120), status: "Insight", color: "#55b8a5" });
+    res.json(RunCommandCenterResponse.parse({ answer, toolCalls }));
   } catch (error) { next(error); }
 });
 

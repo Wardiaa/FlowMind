@@ -1,6 +1,7 @@
 import app from "./app";
 import { isLocalAuthMode } from "./lib/auth";
 import { logger } from "./lib/logger";
+import { startScheduler } from "./lib/scheduler";
 import path from "node:path";
 
 const rawPort = process.env["PORT"];
@@ -77,5 +78,6 @@ app.listen(port, localAuth ? "127.0.0.1" : "0.0.0.0", (err) => {
     process.exit(1);
   }
 
+  startScheduler();
   logger.info({ port }, "Server listening");
 });
