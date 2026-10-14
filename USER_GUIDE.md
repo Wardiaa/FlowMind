@@ -49,7 +49,7 @@ Open **Approvals** to see everything waiting on a human decision in one place. P
 
 ## Analytics
 
-Analytics summarizes workflow and agent run totals and workflow status, plus an **AI usage** section for the selected period (7/14/30/90 days): total Gemini calls, input and output tokens, calls per day, and a per-feature breakdown (agent runs, command center, project analysis, workflow AI steps, embeddings). It is based on the saved workspace records; empty charts mean there is not yet enough run data.
+Analytics summarizes workflow and agent run totals and workflow status, plus an **AI usage** section for the selected period (7/14/30/90 days): total Gemini calls, input and output tokens, calls per day, and a per-feature breakdown (agent runs, command center, project analysis, workflow AI steps, embeddings). It is based on the saved workspace records; empty charts mean there is not yet enough run data. When the daily AI request limit is reached, AI features return a friendly "limit reached" message instead of running, and work again once the rolling 24-hour window frees up.
 
 ## Activity log
 

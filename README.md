@@ -93,7 +93,7 @@ This walkthrough uses Render (web + API) and Neon (PostgreSQL + Object Storage),
    - Render free web services spin down after ~15 minutes without traffic; the next request takes up to about a minute while the service wakes.
    - Neon free PostgreSQL suspends compute when idle; the first query after a pause has a short wake-up latency.
    - Neon Object Storage's free tier includes 5 GB per project.
-   - The Gemini API free tier allows roughly 20 requests per day for the flash model family. Every AI feature counts against it — agent runs, command-center questions, project analysis, workflow `ai:` steps (including scheduled runs). A schedule firing every minute can exhaust the daily quota in under half an hour; prefer calm crons (e.g. `0 9 * * *`).
+   - Free-tier Gemini quotas are per model, and preview models are tiny (`gemini-3-flash-preview`: ~20 requests/day). FlowMind defaults to `gemini-3.5-flash-lite`, which has a much larger free bucket. Every AI feature draws from it — agent runs, command-center questions, project analysis, workflow `ai:` steps (including scheduled runs). A schedule firing every minute can burn any daily quota; prefer calm crons (e.g. `0 9 * * *`). FlowMind's own `GEMINI_DAILY_REQUEST_LIMIT` guard stops runaway schedules with a friendly error instead of failed runs.
    - While the Google OAuth consent screen stays in **Testing** status, refresh tokens expire after 7 days and users must sign in again. Publish the app (still free) to remove this limit.
 
 ## Configuration
@@ -121,6 +121,8 @@ This walkthrough uses Render (web + API) and Neon (PostgreSQL + Object Storage),
 | `S3_ACCESS_KEY_ID` | S3 access key ID |
 | `S3_SECRET_ACCESS_KEY` | S3 secret access key |
 | `GEMINI_API_KEY` | Google Gemini API key for AI features |
+| `GEMINI_CHAT_MODEL` | Chat model for AI features (default `gemini-3.5-flash-lite`, the largest free quota; `gemini-3-flash-preview` is ~20 free requests/day) |
+| `GEMINI_DAILY_REQUEST_LIMIT` | Soft cap on chat AI requests per rolling 24h (default `1000`; `0` disables) |
 
 ## Useful commands
 
@@ -138,7 +140,7 @@ Stop the app with Ctrl+C. Stop PostgreSQL with `docker compose down` (do **not**
 
 - **Database connection fails:** confirm PostgreSQL is running (`docker compose ps`) and `DATABASE_URL` matches the local credentials.
 - **Port already in use:** change `FLOWMIND_WEB_PORT` or `API_PORT` in `.env`.
-- **AI features fail:** check that `GEMINI_API_KEY` is set and valid.
+- **AI features fail:** check that `GEMINI_API_KEY` is set and valid. A `429` mentioning "Daily AI request limit reached" is FlowMind's own soft guard — wait for the rolling 24h window to reset or raise `GEMINI_DAILY_REQUEST_LIMIT`. A Google `429`/`404` naming the model means that model's free quota is gone or the model is unavailable to new projects; switch `GEMINI_CHAT_MODEL` to one with a larger free bucket.
 - **Google sign-in fails after deployment:** confirm `OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`, that `PUBLIC_APP_URL` is the exact HTTPS origin, and that the authorized redirect URI in Google Cloud Console equals `${PUBLIC_APP_URL}/api/callback` character for character.
 - **Uploads fail with `FLOWMIND_STORAGE_MODE=s3`:** verify all `S3_*` values (the endpoint must include `https://`) and that the bucket exists in the Neon project.
 - **Uploaded files disappear after a redeploy:** you are running filesystem storage on an ephemeral disk; use `FLOWMIND_STORAGE_MODE=s3` instead.
