@@ -130,6 +130,7 @@ export const aiUsageTable = pgTable("flowmind_ai_usage", {
   outputTokens: integer("output_tokens").notNull().default(0),
   latencyMs: integer("latency_ms"),
   refId: text("ref_id"),
+  keySource: text("key_source"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -140,6 +141,7 @@ export const workspaceSettingsTable = pgTable("flowmind_workspace_settings", {
   pauseBeforeExternalActions: boolean("pause_before_external_actions").notNull().default(true),
   showSourceContext: boolean("show_source_context").notNull().default(true),
   dailyDigest: boolean("daily_digest").notNull().default(false),
+  geminiApiKeyEnc: text("gemini_api_key_enc"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
