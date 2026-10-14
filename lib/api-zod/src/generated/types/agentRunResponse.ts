@@ -9,4 +9,6 @@
 export interface AgentRunResponse {
   answer: string;
   activityId: string;
+  /** @nullable */
+  runId?: string | null;
 }

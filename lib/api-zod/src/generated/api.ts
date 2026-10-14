@@ -117,7 +117,30 @@ export const RunAgentBody = zod.object({
 
 export const RunAgentResponse = zod.object({
   "answer": zod.string(),
-  "activityId": zod.string()
+  "activityId": zod.string(),
+  "runId": zod.string().nullish()
+})
+
+
+/**
+ * @summary List recent runs for an agent
+ */
+export const ListAgentRunsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListAgentRunsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "agentId": zod.string(),
+  "prompt": zod.string(),
+  "answer": zod.string().nullish(),
+  "status": zod.enum(['completed', 'failed']),
+  "latencyMs": zod.number().int().nullish(),
+  "inputTokens": zod.number().int().nullish(),
+  "outputTokens": zod.number().int().nullish(),
+  "createdAt": zod.coerce.date()
+}))
 })
 
 
@@ -128,6 +151,11 @@ export const ListWorkflowsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "trigger": zod.string(),
+  "triggerType": zod.enum(['manual', 'schedule', 'webhook']),
+  "schedule": zod.string().nullish(),
+  "webhookToken": zod.string().nullish(),
+  "nextRunAt": zod.coerce.date().nullish(),
+  "lastRunAt": zod.coerce.date().nullish(),
   "status": zod.enum(['Active', 'Draft', 'Paused']),
   "runs": zod.number().int(),
   "success": zod.string(),
@@ -148,6 +176,8 @@ export const ListWorkflowsResponse = zod.array(ListWorkflowsResponseItem)
 export const CreateWorkflowBody = zod.object({
   "name": zod.string().min(1),
   "trigger": zod.string().min(1),
+  "triggerType": zod.enum(['manual', 'schedule', 'webhook']).optional(),
+  "schedule": zod.string().nullish(),
   "status": zod.enum(['Active', 'Draft', 'Paused']).optional(),
   "steps": zod.array(zod.string()).optional()
 })
@@ -156,6 +186,11 @@ export const CreateWorkflowResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "trigger": zod.string(),
+  "triggerType": zod.enum(['manual', 'schedule', 'webhook']),
+  "schedule": zod.string().nullish(),
+  "webhookToken": zod.string().nullish(),
+  "nextRunAt": zod.coerce.date().nullish(),
+  "lastRunAt": zod.coerce.date().nullish(),
   "status": zod.enum(['Active', 'Draft', 'Paused']),
   "runs": zod.number().int(),
   "success": zod.string(),
@@ -179,6 +214,8 @@ export const UpdateWorkflowParams = zod.object({
 export const UpdateWorkflowBody = zod.object({
   "name": zod.string().min(1).optional(),
   "trigger": zod.string().min(1).optional(),
+  "triggerType": zod.enum(['manual', 'schedule', 'webhook']).optional(),
+  "schedule": zod.string().nullish(),
   "status": zod.enum(['Active', 'Draft', 'Paused']).optional(),
   "steps": zod.array(zod.string()).optional()
 })
@@ -187,6 +224,11 @@ export const UpdateWorkflowResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "trigger": zod.string(),
+  "triggerType": zod.enum(['manual', 'schedule', 'webhook']),
+  "schedule": zod.string().nullish(),
+  "webhookToken": zod.string().nullish(),
+  "nextRunAt": zod.coerce.date().nullish(),
+  "lastRunAt": zod.coerce.date().nullish(),
   "status": zod.enum(['Active', 'Draft', 'Paused']),
   "runs": zod.number().int(),
   "success": zod.string(),
@@ -197,7 +239,7 @@ export const UpdateWorkflowResponse = zod.object({
 
 
 /**
- * @summary Run a workflow
+ * @summary Start a workflow run
  */
 export const RunWorkflowParams = zod.object({
   "id": zod.coerce.string()
@@ -207,8 +249,50 @@ export const RunWorkflowResponse = zod.object({
   "id": zod.string(),
   "workflowId": zod.string(),
   "status": zod.enum(['Running', 'Completed', 'Failed', 'Waiting']),
+  "triggerSource": zod.enum(['manual', 'schedule', 'webhook']),
   "duration": zod.string(),
-  "steps": zod.array(zod.string())
+  "durationMs": zod.number().int().nullish(),
+  "error": zod.string().nullish(),
+  "steps": zod.array(zod.object({
+  "name": zod.string(),
+  "kind": zod.enum(['action', 'ai', 'approval']),
+  "status": zod.enum(['pending', 'running', 'completed', 'waiting_approval', 'approved', 'rejected', 'failed']),
+  "startedAt": zod.coerce.date().nullish(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "output": zod.string().nullish()
+})),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List recent executions for a workflow
+ */
+export const ListWorkflowExecutionsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListWorkflowExecutionsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "workflowId": zod.string(),
+  "status": zod.enum(['Running', 'Completed', 'Failed', 'Waiting']),
+  "triggerSource": zod.enum(['manual', 'schedule', 'webhook']),
+  "duration": zod.string(),
+  "durationMs": zod.number().int().nullish(),
+  "error": zod.string().nullish(),
+  "steps": zod.array(zod.object({
+  "name": zod.string(),
+  "kind": zod.enum(['action', 'ai', 'approval']),
+  "status": zod.enum(['pending', 'running', 'completed', 'waiting_approval', 'approved', 'rejected', 'failed']),
+  "startedAt": zod.coerce.date().nullish(),
+  "finishedAt": zod.coerce.date().nullish(),
+  "output": zod.string().nullish()
+})),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullish()
+}))
 })
 
 
@@ -296,6 +380,31 @@ export const DeleteDocumentResponse = zod.void()
 
 
 /**
+ * @summary Semantic search over workspace documents
+ */
+
+export const searchDocumentsBodyTopKMax = 20;
+
+
+
+export const SearchDocumentsBody = zod.object({
+  "query": zod.string().min(1),
+  "topK": zod.number().int().min(1).max(searchDocumentsBodyTopKMax).optional()
+})
+
+export const SearchDocumentsResponse = zod.object({
+  "mode": zod.enum(['vector', 'keyword']),
+  "results": zod.array(zod.object({
+  "documentId": zod.string(),
+  "documentName": zod.string(),
+  "chunkIndex": zod.number().int(),
+  "content": zod.string(),
+  "score": zod.number()
+}))
+})
+
+
+/**
  * @summary List activity events
  */
 export const ListActivityResponseItem = zod.object({
@@ -308,6 +417,24 @@ export const ListActivityResponseItem = zod.object({
   "color": zod.string()
 })
 export const ListActivityResponse = zod.array(ListActivityResponseItem)
+
+
+/**
+ * @summary List approvals
+ */
+export const ListApprovalsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "agent": zod.string(),
+  "title": zod.string(),
+  "excerpt": zod.string(),
+  "draft": zod.string(),
+  "status": zod.enum(['Pending', 'Approved', 'Rejected']),
+  "executionId": zod.string().nullish(),
+  "workflowId": zod.string().nullish(),
+  "stepIndex": zod.number().int().nullish()
+}))
+})
 
 
 /**
@@ -328,7 +455,98 @@ export const DecideApprovalResponse = zod.object({
   "title": zod.string(),
   "excerpt": zod.string(),
   "draft": zod.string(),
-  "status": zod.enum(['Pending', 'Approved', 'Rejected'])
+  "status": zod.enum(['Pending', 'Approved', 'Rejected']),
+  "executionId": zod.string().nullish(),
+  "workflowId": zod.string().nullish(),
+  "stepIndex": zod.number().int().nullish()
+})
+
+
+/**
+ * @summary List in-app notifications with unread count
+ */
+export const ListNotificationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['approval_pending', 'approval_decision', 'run_completed', 'run_failed']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "href": zod.string().nullish(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "unreadCount": zod.number().int()
+})
+
+
+/**
+ * @summary Mark all notifications as read
+ */
+export const MarkAllNotificationsReadResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['approval_pending', 'approval_decision', 'run_completed', 'run_failed']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "href": zod.string().nullish(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "unreadCount": zod.number().int()
+})
+
+
+/**
+ * @summary Mark one notification as read
+ */
+export const MarkNotificationReadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const MarkNotificationReadResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['approval_pending', 'approval_decision', 'run_completed', 'run_failed']),
+  "title": zod.string(),
+  "body": zod.string(),
+  "href": zod.string().nullish(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "unreadCount": zod.number().int()
+})
+
+
+/**
+ * @summary AI token and latency usage over recent days
+ */
+export const getAiUsageQueryDaysDefault = 14;
+export const getAiUsageQueryDaysMax = 90;
+
+
+
+export const GetAiUsageQueryParams = zod.object({
+  "days": zod.coerce.number().int().min(1).max(getAiUsageQueryDaysMax).default(getAiUsageQueryDaysDefault)
+})
+
+export const GetAiUsageResponse = zod.object({
+  "totals": zod.object({
+  "calls": zod.number().int(),
+  "inputTokens": zod.number().int(),
+  "outputTokens": zod.number().int()
+}),
+  "byFeature": zod.array(zod.object({
+  "feature": zod.string(),
+  "calls": zod.number().int(),
+  "inputTokens": zod.number().int(),
+  "outputTokens": zod.number().int()
+})),
+  "daily": zod.array(zod.object({
+  "date": zod.string(),
+  "calls": zod.number().int(),
+  "inputTokens": zod.number().int(),
+  "outputTokens": zod.number().int()
+}))
 })
 
 
@@ -379,7 +597,13 @@ export const RunCommandCenterBody = zod.object({
 })
 
 export const RunCommandCenterResponse = zod.object({
-  "answer": zod.string()
+  "answer": zod.string(),
+  "toolCalls": zod.array(zod.object({
+  "tool": zod.string(),
+  "args": zod.record(zod.string(), zod.unknown()),
+  "summary": zod.string(),
+  "documents": zod.array(zod.string()).optional()
+}))
 })
 
 

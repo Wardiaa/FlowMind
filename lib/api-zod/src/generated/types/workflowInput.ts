@@ -6,12 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { WorkflowInputStatus } from './workflowInputStatus';
+import type { WorkflowInputTriggerType } from './workflowInputTriggerType';
 
 export interface WorkflowInput {
   /** @minLength 1 */
   name: string;
   /** @minLength 1 */
   trigger: string;
+  triggerType?: WorkflowInputTriggerType;
+  /** @nullable */
+  schedule?: string | null;
   status?: WorkflowInputStatus;
   steps?: string[];
 }

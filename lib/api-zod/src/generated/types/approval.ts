@@ -14,4 +14,10 @@ export interface Approval {
   excerpt: string;
   draft: string;
   status: ApprovalStatus;
+  /** @nullable */
+  executionId?: string | null;
+  /** @nullable */
+  workflowId?: string | null;
+  /** @nullable */
+  stepIndex?: number | null;
 }

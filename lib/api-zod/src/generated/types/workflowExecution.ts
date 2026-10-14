@@ -5,12 +5,22 @@
  * FlowMind business automation workspace API
  * OpenAPI spec version: 0.1.0
  */
+import type { ExecutionStep } from './executionStep';
 import type { WorkflowExecutionStatus } from './workflowExecutionStatus';
+import type { WorkflowExecutionTriggerSource } from './workflowExecutionTriggerSource';
 
 export interface WorkflowExecution {
   id: string;
   workflowId: string;
   status: WorkflowExecutionStatus;
+  triggerSource: WorkflowExecutionTriggerSource;
   duration: string;
-  steps: string[];
+  /** @nullable */
+  durationMs?: number | null;
+  /** @nullable */
+  error?: string | null;
+  steps: ExecutionStep[];
+  startedAt: Date;
+  /** @nullable */
+  finishedAt?: Date | null;
 }

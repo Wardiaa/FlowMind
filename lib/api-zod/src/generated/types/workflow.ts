@@ -6,11 +6,21 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { WorkflowStatus } from './workflowStatus';
+import type { WorkflowTriggerType } from './workflowTriggerType';
 
 export interface Workflow {
   id: string;
   name: string;
   trigger: string;
+  triggerType: WorkflowTriggerType;
+  /** @nullable */
+  schedule?: string | null;
+  /** @nullable */
+  webhookToken?: string | null;
+  /** @nullable */
+  nextRunAt?: Date | null;
+  /** @nullable */
+  lastRunAt?: Date | null;
   status: WorkflowStatus;
   runs: number;
   success: string;

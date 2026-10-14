@@ -19,6 +19,8 @@ tags:
   - name: command
   - name: storage
   - name: auth
+  - name: notifications
+  - name: analytics
 paths:
   /healthz:
     get:
@@ -95,6 +97,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRunResponse"
+  /agents/{id}/runs:
+    get:
+      operationId: listAgentRuns
+      tags: [agents]
+      summary: List recent runs for an agent
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Agent run history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRunList"
   /workflows:
     get:
       operationId: listWorkflows
@@ -150,16 +166,30 @@ paths:
     post:
       operationId: runWorkflow
       tags: [workflows]
-      summary: Run a workflow
+      summary: Start a workflow run
       parameters:
         - $ref: "#/components/parameters/Id"
       responses:
-        "200":
-          description: Workflow execution
+        "202":
+          description: Workflow execution started
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkflowExecution"
+  /workflows/{id}/executions:
+    get:
+      operationId: listWorkflowExecutions
+      tags: [workflows]
+      summary: List recent executions for a workflow
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Workflow execution history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecutionList"
   /projects:
     get:
       operationId: listProjects
@@ -229,6 +259,24 @@ paths:
       responses:
         "204":
           description: Document deleted
+  /documents/search:
+    post:
+      operationId: searchDocuments
+      tags: [documents]
+      summary: Semantic search over workspace documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentSearchInput"
+      responses:
+        "200":
+          description: Ranked document passages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSearchResponse"
   /activity:
     get:
       operationId: listActivity
@@ -243,6 +291,18 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ActivityEvent"
+  /approvals:
+    get:
+      operationId: listApprovals
+      tags: [approvals]
+      summary: List approvals
+      responses:
+        "200":
+          description: Approval list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalList"
   /approvals/{id}/decision:
     patch:
       operationId: decideApproval
@@ -263,6 +323,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Approval"
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List in-app notifications with unread count
+      responses:
+        "200":
+          description: Notifications and unread count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+  /notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: All notifications marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark one notification as read
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Updated notification list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+  /analytics/ai-usage:
+    get:
+      operationId: getAiUsage
+      tags: [analytics]
+      summary: AI token and latency usage over recent days
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 14
+      responses:
+        "200":
+          description: AI usage report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiUsageReport"
   /settings:
     get:
       operationId: getWorkspaceSettings
@@ -309,7 +428,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalysisResponse"
+                $ref: "#/components/schemas/CommandCenterResponse"
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -444,11 +563,16 @@ components:
         description: { type: string, minLength: 1 }
     Workflow:
       type: object
-      required: [id, name, trigger, status, runs, success, lastRun, color, steps]
+      required: [id, name, trigger, triggerType, status, runs, success, lastRun, color, steps]
       properties:
         id: { type: string }
         name: { type: string }
         trigger: { type: string }
+        triggerType: { type: string, enum: [manual, schedule, webhook] }
+        schedule: { type: [string, "null"] }
+        webhookToken: { type: [string, "null"] }
+        nextRunAt: { type: [string, "null"], format: date-time }
+        lastRunAt: { type: [string, "null"], format: date-time }
         status: { type: string, enum: [Active, Draft, Paused] }
         runs: { type: integer }
         success: { type: string }
@@ -463,6 +587,8 @@ components:
       properties:
         name: { type: string, minLength: 1 }
         trigger: { type: string, minLength: 1 }
+        triggerType: { type: string, enum: [manual, schedule, webhook] }
+        schedule: { type: [string, "null"] }
         status: { type: string, enum: [Active, Draft, Paused] }
         steps:
           type: array
@@ -472,21 +598,47 @@ components:
       properties:
         name: { type: string, minLength: 1 }
         trigger: { type: string, minLength: 1 }
+        triggerType: { type: string, enum: [manual, schedule, webhook] }
+        schedule: { type: [string, "null"] }
         status: { type: string, enum: [Active, Draft, Paused] }
         steps:
           type: array
           items: { type: string }
+    ExecutionStep:
+      type: object
+      required: [name, kind, status]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [action, ai, approval] }
+        status: { type: string, enum: [pending, running, completed, waiting_approval, approved, rejected, failed] }
+        startedAt: { type: [string, "null"], format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+        output: { type: [string, "null"] }
     WorkflowExecution:
       type: object
-      required: [id, workflowId, status, duration, steps]
+      required: [id, workflowId, status, triggerSource, duration, steps, startedAt]
       properties:
         id: { type: string }
         workflowId: { type: string }
         status: { type: string, enum: [Running, Completed, Failed, Waiting] }
+        triggerSource: { type: string, enum: [manual, schedule, webhook] }
         duration: { type: string }
+        durationMs: { type: [integer, "null"] }
+        error: { type: [string, "null"] }
         steps:
           type: array
-          items: { type: string }
+          items:
+            $ref: "#/components/schemas/ExecutionStep"
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+    WorkflowExecutionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowExecution"
     Project:
       type: object
       required: [id, name, code, color, progress, tasks, owner, due, health]
@@ -568,6 +720,7 @@ components:
       properties:
         answer: { type: string }
         activityId: { type: string }
+        runId: { type: [string, "null"] }
     PromptInput:
       type: object
       required: [prompt]
@@ -578,6 +731,49 @@ components:
       required: [answer]
       properties:
         answer: { type: string }
+    CommandToolCall:
+      type: object
+      required: [tool, args, summary]
+      properties:
+        tool: { type: string }
+        args: { type: object, additionalProperties: true }
+        summary: { type: string }
+        documents:
+          type: array
+          items: { type: string }
+    CommandCenterResponse:
+      type: object
+      required: [answer, toolCalls]
+      properties:
+        answer: { type: string }
+        toolCalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommandToolCall"
+    DocumentSearchInput:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1 }
+        topK: { type: integer, minimum: 1, maximum: 20 }
+    DocumentSearchHit:
+      type: object
+      required: [documentId, documentName, chunkIndex, content, score]
+      properties:
+        documentId: { type: string }
+        documentName: { type: string }
+        chunkIndex: { type: integer }
+        content: { type: string }
+        score: { type: number }
+    DocumentSearchResponse:
+      type: object
+      required: [mode, results]
+      properties:
+        mode: { type: string, enum: [vector, keyword] }
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentSearchHit"
     Approval:
       type: object
       required: [id, agent, title, excerpt, draft, status]
@@ -588,6 +784,89 @@ components:
         excerpt: { type: string }
         draft: { type: string }
         status: { type: string, enum: [Pending, Approved, Rejected] }
+        executionId: { type: [string, "null"] }
+        workflowId: { type: [string, "null"] }
+        stepIndex: { type: [integer, "null"] }
+    ApprovalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Approval"
+    Notification:
+      type: object
+      required: [id, kind, title, body, readAt, createdAt]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [approval_pending, approval_decision, run_completed, run_failed] }
+        title: { type: string }
+        body: { type: string }
+        href: { type: [string, "null"] }
+        readAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+    NotificationList:
+      type: object
+      required: [items, unreadCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        unreadCount: { type: integer }
+    AgentRun:
+      type: object
+      required: [id, agentId, prompt, status, createdAt]
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        prompt: { type: string }
+        answer: { type: [string, "null"] }
+        status: { type: string, enum: [completed, failed] }
+        latencyMs: { type: [integer, "null"] }
+        inputTokens: { type: [integer, "null"] }
+        outputTokens: { type: [integer, "null"] }
+        createdAt: { type: string, format: date-time }
+    AgentRunList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentRun"
+    AiUsageReport:
+      type: object
+      required: [totals, byFeature, daily]
+      properties:
+        totals:
+          type: object
+          required: [calls, inputTokens, outputTokens]
+          properties:
+            calls: { type: integer }
+            inputTokens: { type: integer }
+            outputTokens: { type: integer }
+        byFeature:
+          type: array
+          items:
+            type: object
+            required: [feature, calls, inputTokens, outputTokens]
+            properties:
+              feature: { type: string }
+              calls: { type: integer }
+              inputTokens: { type: integer }
+              outputTokens: { type: integer }
+        daily:
+          type: array
+          items:
+            type: object
+            required: [date, calls, inputTokens, outputTokens]
+            properties:
+              date: { type: string }
+              calls: { type: integer }
+              inputTokens: { type: integer }
+              outputTokens: { type: integer }
     ApprovalDecision:
       type: object
       required: [status]

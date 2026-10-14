@@ -24,23 +24,32 @@ import type {
   Agent,
   AgentInput,
   AgentRunInput,
+  AgentRunList,
   AgentRunResponse,
+  AiUsageReport,
   AnalysisResponse,
   Approval,
   ApprovalDecision,
+  ApprovalList,
   AuthUserEnvelope,
   BeginBrowserLoginParams,
+  CommandCenterResponse,
   Dashboard,
   Document,
   DocumentInput,
+  DocumentSearchInput,
+  DocumentSearchResponse,
+  GetAiUsageParams,
   HealthStatus,
   LogoutBrowserSessionParams,
+  NotificationList,
   Project,
   PromptInput,
   UploadUrlRequest,
   UploadUrlResponse,
   Workflow,
   WorkflowExecution,
+  WorkflowExecutionList,
   WorkflowInput,
   WorkflowUpdate,
   WorkspaceSettings,
@@ -482,6 +491,83 @@ export const useRunAgent = <TError = ErrorType<unknown>,
       return useMutation(getRunAgentMutationOptions(options));
     }
 
+export const getListAgentRunsUrl = (id: string,) => {
+
+
+
+
+  return `/api/agents/${id}/runs`
+}
+
+/**
+ * @summary List recent runs for an agent
+ */
+export const listAgentRuns = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<AgentRunList> => {
+
+  return customFetch<AgentRunList>(getListAgentRunsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentRunsQueryKey = (id: string,) => {
+    return [
+    `/api/agents/${id}/runs`
+    ] as const;
+    }
+
+
+export const getListAgentRunsQueryOptions = <TData = Awaited<ReturnType<typeof listAgentRuns>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentRunsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentRuns>>> = ({ signal }) => listAgentRuns(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentRuns>>>
+export type ListAgentRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List recent runs for an agent
+ */
+
+export function useListAgentRuns<TData = Awaited<ReturnType<typeof listAgentRuns>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentRunsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListWorkflowsUrl = () => {
 
 
@@ -745,7 +831,7 @@ export const getRunWorkflowUrl = (id: string,) => {
 }
 
 /**
- * @summary Run a workflow
+ * @summary Start a workflow run
  */
 export const runWorkflow = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<WorkflowExecution> => {
 
@@ -797,7 +883,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RunWorkflowMutationVariables = {id: string}
 
     /**
- * @summary Run a workflow
+ * @summary Start a workflow run
  */
 export const useRunWorkflow = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runWorkflow>>, TError,RunWorkflowMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -809,6 +895,83 @@ export const useRunWorkflow = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRunWorkflowMutationOptions(options));
     }
+
+export const getListWorkflowExecutionsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workflows/${id}/executions`
+}
+
+/**
+ * @summary List recent executions for a workflow
+ */
+export const listWorkflowExecutions = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<WorkflowExecutionList> => {
+
+  return customFetch<WorkflowExecutionList>(getListWorkflowExecutionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWorkflowExecutionsQueryKey = (id: string,) => {
+    return [
+    `/api/workflows/${id}/executions`
+    ] as const;
+    }
+
+
+export const getListWorkflowExecutionsQueryOptions = <TData = Awaited<ReturnType<typeof listWorkflowExecutions>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkflowExecutions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkflowExecutionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkflowExecutions>>> = ({ signal }) => listWorkflowExecutions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkflowExecutions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkflowExecutionsQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkflowExecutions>>>
+export type ListWorkflowExecutionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List recent executions for a workflow
+ */
+
+export function useListWorkflowExecutions<TData = Awaited<ReturnType<typeof listWorkflowExecutions>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkflowExecutions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkflowExecutionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListProjectsUrl = () => {
 
@@ -1200,6 +1363,94 @@ export const useDeleteDocument = <TError = ErrorType<unknown>,
       return useMutation(getDeleteDocumentMutationOptions(options));
     }
 
+export const getSearchDocumentsUrl = () => {
+
+
+
+
+  return `/api/documents/search`
+}
+
+/**
+ * @summary Semantic search over workspace documents
+ */
+export const searchDocuments = async (documentSearchInput: DocumentSearchInput, options?: Parameters<typeof customFetch>[1]): Promise<DocumentSearchResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<DocumentSearchResponse>(getSearchDocumentsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(documentSearchInput)
+  }
+);}
+
+
+
+
+
+export const getSearchDocumentsMutationKey = () => ['searchDocuments'] as const;
+
+export const getSearchDocumentsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof searchDocuments>>, TError,SearchDocumentsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof searchDocuments>>, TError,SearchDocumentsMutationVariables, TContext> => {
+
+const mutationKey = getSearchDocumentsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof searchDocuments>>, SearchDocumentsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  searchDocuments(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SearchDocumentsMutationResult = NonNullable<Awaited<ReturnType<typeof searchDocuments>>>
+    export type SearchDocumentsMutationBody = BodyType<DocumentSearchInput>
+    export type SearchDocumentsMutationError = ErrorType<unknown>
+    export type SearchDocumentsMutationVariables = {data: BodyType<DocumentSearchInput>}
+
+    /**
+ * @summary Semantic search over workspace documents
+ */
+export const useSearchDocuments = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof searchDocuments>>, TError,SearchDocumentsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof searchDocuments>>,
+        TError,
+        SearchDocumentsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSearchDocumentsMutationOptions(options));
+    }
+
 export const getListActivityUrl = () => {
 
 
@@ -1265,6 +1516,83 @@ export function useListActivity<TData = Awaited<ReturnType<typeof listActivity>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListActivityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListApprovalsUrl = () => {
+
+
+
+
+  return `/api/approvals`
+}
+
+/**
+ * @summary List approvals
+ */
+export const listApprovals = async ( options?: Parameters<typeof customFetch>[1]): Promise<ApprovalList> => {
+
+  return customFetch<ApprovalList>(getListApprovalsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListApprovalsQueryKey = () => {
+    return [
+    `/api/approvals`
+    ] as const;
+    }
+
+
+export const getListApprovalsQueryOptions = <TData = Awaited<ReturnType<typeof listApprovals>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApprovals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListApprovalsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listApprovals>>> = ({ signal }) => listApprovals({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listApprovals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListApprovalsQueryResult = NonNullable<Awaited<ReturnType<typeof listApprovals>>>
+export type ListApprovalsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List approvals
+ */
+
+export function useListApprovals<TData = Awaited<ReturnType<typeof listApprovals>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApprovals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListApprovalsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -1365,6 +1693,315 @@ export const useDecideApproval = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getDecideApprovalMutationOptions(options));
     }
+
+export const getListNotificationsUrl = () => {
+
+
+
+
+  return `/api/notifications`
+}
+
+/**
+ * @summary List in-app notifications with unread count
+ */
+export const listNotifications = async ( options?: Parameters<typeof customFetch>[1]): Promise<NotificationList> => {
+
+  return customFetch<NotificationList>(getListNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNotificationsQueryKey = () => {
+    return [
+    `/api/notifications`
+    ] as const;
+    }
+
+
+export const getListNotificationsQueryOptions = <TData = Awaited<ReturnType<typeof listNotifications>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNotificationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNotifications>>> = ({ signal }) => listNotifications({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNotificationsQueryResult = NonNullable<Awaited<ReturnType<typeof listNotifications>>>
+export type ListNotificationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List in-app notifications with unread count
+ */
+
+export function useListNotifications<TData = Awaited<ReturnType<typeof listNotifications>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNotificationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getMarkAllNotificationsReadUrl = () => {
+
+
+
+
+  return `/api/notifications/read-all`
+}
+
+/**
+ * @summary Mark all notifications as read
+ */
+export const markAllNotificationsRead = async ( options?: Parameters<typeof customFetch>[1]): Promise<NotificationList> => {
+
+  return customFetch<NotificationList>(getMarkAllNotificationsReadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getMarkAllNotificationsReadMutationKey = () => ['markAllNotificationsRead'] as const;
+
+export const getMarkAllNotificationsReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext> => {
+
+const mutationKey = getMarkAllNotificationsReadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markAllNotificationsRead>>, void> = () => {
+
+
+          return  markAllNotificationsRead(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkAllNotificationsReadMutationResult = NonNullable<Awaited<ReturnType<typeof markAllNotificationsRead>>>
+
+    export type MarkAllNotificationsReadMutationError = ErrorType<unknown>
+
+
+    /**
+ * @summary Mark all notifications as read
+ */
+export const useMarkAllNotificationsRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markAllNotificationsRead>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getMarkAllNotificationsReadMutationOptions(options));
+    }
+
+export const getMarkNotificationReadUrl = (id: string,) => {
+
+
+
+
+  return `/api/notifications/${id}/read`
+}
+
+/**
+ * @summary Mark one notification as read
+ */
+export const markNotificationRead = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<NotificationList> => {
+
+  return customFetch<NotificationList>(getMarkNotificationReadUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getMarkNotificationReadMutationKey = () => ['markNotificationRead'] as const;
+
+export const getMarkNotificationReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,MarkNotificationReadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,MarkNotificationReadMutationVariables, TContext> => {
+
+const mutationKey = getMarkNotificationReadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markNotificationRead>>, MarkNotificationReadMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  markNotificationRead(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkNotificationReadMutationResult = NonNullable<Awaited<ReturnType<typeof markNotificationRead>>>
+
+    export type MarkNotificationReadMutationError = ErrorType<unknown>
+    export type MarkNotificationReadMutationVariables = {id: string}
+
+    /**
+ * @summary Mark one notification as read
+ */
+export const useMarkNotificationRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,MarkNotificationReadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markNotificationRead>>,
+        TError,
+        MarkNotificationReadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMarkNotificationReadMutationOptions(options));
+    }
+
+export const getGetAiUsageUrl = (params?: GetAiUsageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analytics/ai-usage?${stringifiedParams}` : `/api/analytics/ai-usage`
+}
+
+/**
+ * @summary AI token and latency usage over recent days
+ */
+export const getAiUsage = async (params?: GetAiUsageParams, options?: Parameters<typeof customFetch>[1]): Promise<AiUsageReport> => {
+
+  return customFetch<AiUsageReport>(getGetAiUsageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiUsageQueryKey = (params?: GetAiUsageParams,) => {
+    return [
+    `/api/analytics/ai-usage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiUsageQueryOptions = <TData = Awaited<ReturnType<typeof getAiUsage>>, TError = ErrorType<unknown>>(params?: GetAiUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiUsageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiUsage>>> = ({ signal }) => getAiUsage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiUsage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getAiUsage>>>
+export type GetAiUsageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary AI token and latency usage over recent days
+ */
+
+export function useGetAiUsage<TData = Awaited<ReturnType<typeof getAiUsage>>, TError = ErrorType<unknown>>(
+ params?: GetAiUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiUsageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetWorkspaceSettingsUrl = () => {
 
@@ -1542,7 +2179,7 @@ export const getRunCommandCenterUrl = () => {
 /**
  * @summary Ask the AI command center a question
  */
-export const runCommandCenter = async (promptInput: PromptInput, options?: Parameters<typeof customFetch>[1]): Promise<AnalysisResponse> => {
+export const runCommandCenter = async (promptInput: PromptInput, options?: Parameters<typeof customFetch>[1]): Promise<CommandCenterResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -1558,7 +2195,7 @@ export const runCommandCenter = async (promptInput: PromptInput, options?: Param
     }
     return headers;
   };
-return customFetch<AnalysisResponse>(getRunCommandCenterUrl(),
+return customFetch<CommandCenterResponse>(getRunCommandCenterUrl(),
   {
     ...options,
     method: 'POST',

@@ -55,6 +55,15 @@ export interface AgentInput {
   description: string;
 }
 
+export type WorkflowTriggerType = typeof WorkflowTriggerType[keyof typeof WorkflowTriggerType];
+
+
+export const WorkflowTriggerType = {
+  manual: 'manual',
+  schedule: 'schedule',
+  webhook: 'webhook',
+} as const;
+
 export type WorkflowStatus = typeof WorkflowStatus[keyof typeof WorkflowStatus];
 
 
@@ -68,6 +77,15 @@ export interface Workflow {
   id: string;
   name: string;
   trigger: string;
+  triggerType: WorkflowTriggerType;
+  /** @nullable */
+  schedule?: string | null;
+  /** @nullable */
+  webhookToken?: string | null;
+  /** @nullable */
+  nextRunAt?: string | null;
+  /** @nullable */
+  lastRunAt?: string | null;
   status: WorkflowStatus;
   runs: number;
   success: string;
@@ -75,6 +93,15 @@ export interface Workflow {
   color: string;
   steps: string[];
 }
+
+export type WorkflowInputTriggerType = typeof WorkflowInputTriggerType[keyof typeof WorkflowInputTriggerType];
+
+
+export const WorkflowInputTriggerType = {
+  manual: 'manual',
+  schedule: 'schedule',
+  webhook: 'webhook',
+} as const;
 
 export type WorkflowInputStatus = typeof WorkflowInputStatus[keyof typeof WorkflowInputStatus];
 
@@ -90,9 +117,21 @@ export interface WorkflowInput {
   name: string;
   /** @minLength 1 */
   trigger: string;
+  triggerType?: WorkflowInputTriggerType;
+  /** @nullable */
+  schedule?: string | null;
   status?: WorkflowInputStatus;
   steps?: string[];
 }
+
+export type WorkflowUpdateTriggerType = typeof WorkflowUpdateTriggerType[keyof typeof WorkflowUpdateTriggerType];
+
+
+export const WorkflowUpdateTriggerType = {
+  manual: 'manual',
+  schedule: 'schedule',
+  webhook: 'webhook',
+} as const;
 
 export type WorkflowUpdateStatus = typeof WorkflowUpdateStatus[keyof typeof WorkflowUpdateStatus];
 
@@ -108,8 +147,45 @@ export interface WorkflowUpdate {
   name?: string;
   /** @minLength 1 */
   trigger?: string;
+  triggerType?: WorkflowUpdateTriggerType;
+  /** @nullable */
+  schedule?: string | null;
   status?: WorkflowUpdateStatus;
   steps?: string[];
+}
+
+export type ExecutionStepKind = typeof ExecutionStepKind[keyof typeof ExecutionStepKind];
+
+
+export const ExecutionStepKind = {
+  action: 'action',
+  ai: 'ai',
+  approval: 'approval',
+} as const;
+
+export type ExecutionStepStatus = typeof ExecutionStepStatus[keyof typeof ExecutionStepStatus];
+
+
+export const ExecutionStepStatus = {
+  pending: 'pending',
+  running: 'running',
+  completed: 'completed',
+  waiting_approval: 'waiting_approval',
+  approved: 'approved',
+  rejected: 'rejected',
+  failed: 'failed',
+} as const;
+
+export interface ExecutionStep {
+  name: string;
+  kind: ExecutionStepKind;
+  status: ExecutionStepStatus;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  finishedAt?: string | null;
+  /** @nullable */
+  output?: string | null;
 }
 
 export type WorkflowExecutionStatus = typeof WorkflowExecutionStatus[keyof typeof WorkflowExecutionStatus];
@@ -122,12 +198,33 @@ export const WorkflowExecutionStatus = {
   Waiting: 'Waiting',
 } as const;
 
+export type WorkflowExecutionTriggerSource = typeof WorkflowExecutionTriggerSource[keyof typeof WorkflowExecutionTriggerSource];
+
+
+export const WorkflowExecutionTriggerSource = {
+  manual: 'manual',
+  schedule: 'schedule',
+  webhook: 'webhook',
+} as const;
+
 export interface WorkflowExecution {
   id: string;
   workflowId: string;
   status: WorkflowExecutionStatus;
+  triggerSource: WorkflowExecutionTriggerSource;
   duration: string;
-  steps: string[];
+  /** @nullable */
+  durationMs?: number | null;
+  /** @nullable */
+  error?: string | null;
+  steps: ExecutionStep[];
+  startedAt: string;
+  /** @nullable */
+  finishedAt?: string | null;
+}
+
+export interface WorkflowExecutionList {
+  items: WorkflowExecution[];
 }
 
 export type ProjectHealth = typeof ProjectHealth[keyof typeof ProjectHealth];
@@ -218,6 +315,8 @@ export interface AgentRunInput {
 export interface AgentRunResponse {
   answer: string;
   activityId: string;
+  /** @nullable */
+  runId?: string | null;
 }
 
 export interface PromptInput {
@@ -227,6 +326,51 @@ export interface PromptInput {
 
 export interface AnalysisResponse {
   answer: string;
+}
+
+export type CommandToolCallArgs = { [key: string]: unknown };
+
+export interface CommandToolCall {
+  tool: string;
+  args: CommandToolCallArgs;
+  summary: string;
+  documents?: string[];
+}
+
+export interface CommandCenterResponse {
+  answer: string;
+  toolCalls: CommandToolCall[];
+}
+
+export interface DocumentSearchInput {
+  /** @minLength 1 */
+  query: string;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  topK?: number;
+}
+
+export interface DocumentSearchHit {
+  documentId: string;
+  documentName: string;
+  chunkIndex: number;
+  content: string;
+  score: number;
+}
+
+export type DocumentSearchResponseMode = typeof DocumentSearchResponseMode[keyof typeof DocumentSearchResponseMode];
+
+
+export const DocumentSearchResponseMode = {
+  vector: 'vector',
+  keyword: 'keyword',
+} as const;
+
+export interface DocumentSearchResponse {
+  mode: DocumentSearchResponseMode;
+  results: DocumentSearchHit[];
 }
 
 export type ApprovalStatus = typeof ApprovalStatus[keyof typeof ApprovalStatus];
@@ -245,6 +389,97 @@ export interface Approval {
   excerpt: string;
   draft: string;
   status: ApprovalStatus;
+  /** @nullable */
+  executionId?: string | null;
+  /** @nullable */
+  workflowId?: string | null;
+  /** @nullable */
+  stepIndex?: number | null;
+}
+
+export interface ApprovalList {
+  items: Approval[];
+}
+
+export type NotificationKind = typeof NotificationKind[keyof typeof NotificationKind];
+
+
+export const NotificationKind = {
+  approval_pending: 'approval_pending',
+  approval_decision: 'approval_decision',
+  run_completed: 'run_completed',
+  run_failed: 'run_failed',
+} as const;
+
+export interface Notification {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  /** @nullable */
+  href?: string | null;
+  /** @nullable */
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  unreadCount: number;
+}
+
+export type AgentRunStatus = typeof AgentRunStatus[keyof typeof AgentRunStatus];
+
+
+export const AgentRunStatus = {
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface AgentRun {
+  id: string;
+  agentId: string;
+  prompt: string;
+  /** @nullable */
+  answer?: string | null;
+  status: AgentRunStatus;
+  /** @nullable */
+  latencyMs?: number | null;
+  /** @nullable */
+  inputTokens?: number | null;
+  /** @nullable */
+  outputTokens?: number | null;
+  createdAt: string;
+}
+
+export interface AgentRunList {
+  items: AgentRun[];
+}
+
+export type AiUsageReportTotals = {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+export type AiUsageReportByFeatureItem = {
+  feature: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+export type AiUsageReportDailyItem = {
+  date: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+export interface AiUsageReport {
+  totals: AiUsageReportTotals;
+  byFeature: AiUsageReportByFeatureItem[];
+  daily: AiUsageReportDailyItem[];
 }
 
 export type ApprovalDecisionStatus = typeof ApprovalDecisionStatus[keyof typeof ApprovalDecisionStatus];
@@ -308,6 +543,14 @@ export interface AuthUser {
 export interface AuthUserEnvelope {
   user: AuthUser | null;
 }
+
+export type GetAiUsageParams = {
+/**
+ * @minimum 1
+ * @maximum 90
+ */
+days?: number;
+};
 
 export type BeginBrowserLoginParams = {
 returnTo?: string;
