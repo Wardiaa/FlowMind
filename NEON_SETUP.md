@@ -7,7 +7,7 @@ Step-by-step Neon configuration for FlowMind: one PostgreSQL project and one Obj
 1. Sign up at <https://neon.com> (GitHub or Google sign-in works; no card required on the free plan).
 2. In the Console, choose **Create project** and fill in:
    - **Name:** `flowmind` (or anything you like)
-   - **Postgres version:** the default (17) is fine — FlowMind needs 15+
+   - **Postgres version:** the default (17) is fine — FlowMind needs 15+ **with the pgvector extension** (available on all Neon plans, including free)
    - **Region:** pick one close to where you will host the web app
    - Leave the default branch (`main`) and database (`neondb`).
 3. Open the project. The **Connection string** panel is on the project dashboard (sometimes behind a **Connect** button).
@@ -35,6 +35,8 @@ Then:
 ```sh
 DATABASE_URL="postgresql://...aws.neon.tech/neondb?sslmode=require" pnpm db:push
 ```
+
+`pnpm db:push` runs `CREATE EXTENSION IF NOT EXISTS vector` first, so document embeddings work on Neon out of the box — no manual extension step is needed.
 
 ## 2. Enable Object Storage
 
@@ -74,6 +76,7 @@ Also set `FLOWMIND_STORAGE_MODE=s3`. A complete example is in [`.env.production.
 - **Pooled vs direct connection:** the running app should use the pooled (`-pooler`) `DATABASE_URL`; `pnpm db:push` is more reliable against the direct URL. Both point at the same database.
 - **SSL:** keep `?sslmode=require` in `DATABASE_URL`. Neon refuses non-TLS connections, and the app does not add SSL parameters on its own.
 - **Idle behavior (scale to zero):** on the free plan, Postgres compute suspends after a few idle minutes. The first query after a pause wakes it (brief delay; an occasional retry may be needed). Neon Object Storage's free tier includes 5 GB per project.
+- **pgvector:** the document-embedding feature needs the `vector` extension. Neon supports it on every plan; `pnpm db:push` enables it automatically (the command must be run by a role that can create extensions — the project owner works).
 - **Object Storage is branch-scoped:** each branch has its own buckets and endpoint. Files uploaded through the `main` endpoint are not visible from another branch, so point the app at one branch's endpoint and keep it stable.
 - **Use the endpoint exactly as shown:** include `https://`, do not append the bucket name, and do not switch to virtual-hosted-style addressing — FlowMind already uses path-style URLs, which Neon requires.
 - **Region format:** use the region segment from the endpoint (`us-east-2`), not the project's API region label (`aws-us-east-2`).

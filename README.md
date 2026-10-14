@@ -1,6 +1,16 @@
 # FlowMind
 
-FlowMind is a workspace operations dashboard: AI agents, automation workflows, projects, approvals, an activity log, and a document knowledge base. Each signed-in user gets an isolated workspace backed by PostgreSQL, and AI features (command-center questions, project analysis, agent runs) use Google Gemini. Uploaded documents are text-extracted for agent context and stored privately, per owner.
+FlowMind is a workspace operations dashboard: AI agents, automation workflows, projects, approvals, an activity log, and a document knowledge base. Each signed-in user gets an isolated workspace backed by PostgreSQL (with pgvector), and AI features (command-center questions, project analysis, agent runs) use Google Gemini. Uploaded documents are text-extracted, embedded for semantic search, and stored privately, per owner.
+
+Highlights:
+
+- **Workflow triggers** — run a workflow yourself, on a cron schedule (`0 9 * * 1`), or from any external tool via a private inbound webhook URL. Executions run in the background and every run is recorded with per-step status and output.
+- **Human-in-the-loop approvals** — prefix a workflow step with `approval:` and the run pauses until you approve or reject it from the approvals page; approving resumes the run, rejecting fails it.
+- **Document RAG** — uploaded PDF/DOCX/CSV/TXT/MD/JSON files are chunked and embedded (pgvector, HNSW index); agents and the semantic document search ground their answers in your private documents, with a keyword fallback.
+- **In-app notifications** — approval requests, decisions, and automated run results appear in the header bell; no email involved.
+- **Streaming agent runs** — agent answers stream token-by-token in the test bench, and the last 50 runs per agent are kept with token counts and latency.
+- **Command center with tools** — the command center can list projects, workflows, agents, pending approvals, recent activity, and search your documents, showing which sources it used.
+- **AI usage analytics** — every Gemini call is recorded to a per-feature ledger (calls, input/output tokens, latency) and summarized on the analytics page.
 
 For a walkthrough of each area of the app, see [USER_GUIDE.md](./USER_GUIDE.md). Security notes live in [SECURITY.md](./SECURITY.md).
 
@@ -39,6 +49,8 @@ Local development uses a single password-less dev account (`FLOWMIND_AUTH_MODE=l
    pnpm db:push
    ```
 
+   `db:push` enables the `vector` extension first (the Compose image is `pgvector/pgvector:pg16`), pushes the Drizzle schema, then creates the HNSW index on the document-chunk embeddings.
+
 6. Start the API and web app:
 
    ```sh
@@ -72,7 +84,7 @@ This walkthrough uses Render (web + API) and Neon (PostgreSQL + Object Storage),
    DATABASE_URL="paste-the-direct-neon-url" pnpm db:push
    ```
 
-   Use the **direct** (non-pooled) connection string for `db:push`; the pooled string is for the running app.
+   Use the **direct** (non-pooled) connection string for `db:push`; the pooled string is for the running app. `db:push` runs `CREATE EXTENSION IF NOT EXISTS vector` before the push — the pgvector extension is available on Neon free tier.
 
    For the first deploy you can point `PUBLIC_APP_URL` at the Render-assigned `https://<service>.onrender.com` URL and register that redirect URI with Google; update both if you attach a custom domain.
 
@@ -81,6 +93,7 @@ This walkthrough uses Render (web + API) and Neon (PostgreSQL + Object Storage),
    - Render free web services spin down after ~15 minutes without traffic; the next request takes up to about a minute while the service wakes.
    - Neon free PostgreSQL suspends compute when idle; the first query after a pause has a short wake-up latency.
    - Neon Object Storage's free tier includes 5 GB per project.
+   - The Gemini API free tier allows roughly 20 requests per day for the flash model family. Every AI feature counts against it — agent runs, command-center questions, project analysis, workflow `ai:` steps (including scheduled runs). A schedule firing every minute can exhaust the daily quota in under half an hour; prefer calm crons (e.g. `0 9 * * *`).
    - While the Google OAuth consent screen stays in **Testing** status, refresh tokens expire after 7 days and users must sign in again. Publish the app (still free) to remove this limit.
 
 ## Configuration
