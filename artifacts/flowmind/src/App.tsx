@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowRight,
   BarChart3,
+  Bell,
   Bot,
   Check,
   CheckCircle2,
@@ -11,11 +12,13 @@ import {
   CircleAlert,
   Clock3,
   Command,
+  Copy,
   Database,
   FileText,
   FolderKanban,
   History,
   LayoutDashboard,
+  Link2,
   LoaderCircle,
   LogOut,
   Menu,
@@ -40,13 +43,25 @@ import {
   getListDocumentsQueryKey,
   getListWorkflowsQueryKey,
   getGetWorkspaceSettingsQueryKey,
+  getListApprovalsQueryKey,
+  getListNotificationsQueryKey,
+  getListWorkflowExecutionsQueryKey,
+  getListAgentRunsQueryKey,
+  getGetAiUsageQueryKey,
   useAnalyzeProject,
   useCreateDocument,
   useCreateWorkflow,
   useDeleteDocument,
   useDecideApproval,
+  useGetAiUsage,
   useGetWorkspaceSettings,
-  useRunAgent,
+  useListApprovals,
+  useListAgentRuns,
+  useListNotifications,
+  useListWorkflowExecutions,
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+  useSearchDocuments,
   useRunCommandCenter,
   useUpdateWorkflow,
   useUpdateWorkspaceSettings,
@@ -61,10 +76,19 @@ import {
   useRunWorkflow,
   type ActivityEvent,
   type Agent,
+  type AgentRun,
+  type AiUsageReport,
+  type Approval,
+  type CommandToolCall,
   type Dashboard,
   type Document,
+  type DocumentSearchResponse,
+  type ExecutionStep,
+  type Notification,
   type Project,
   type Workflow,
+  type WorkflowExecution,
+  type WorkflowExecutionList,
 } from '@workspace/api-client-react';
 import { useAuth } from '@workspace/auth-web';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -82,6 +106,7 @@ const navGroups = [
       { href: '/', label: 'Overview', icon: LayoutDashboard },
       { href: '/agents', label: 'AI agents', icon: Bot },
       { href: '/workflows', label: 'Workflows', icon: Zap },
+      { href: '/approvals', label: 'Approvals', icon: ShieldCheck },
       { href: '/projects', label: 'Projects', icon: FolderKanban },
     ],
   },
@@ -101,6 +126,84 @@ function cn(...classes: Array<string | false | null | undefined>) {
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : 'The workspace could not be reached.';
+}
+
+function timeAgo(iso: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function formatCompactNumber(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return value.toLocaleString();
+}
+
+function formatDuration(ms: number | null | undefined, fallback: string) {
+  if (ms === null || ms === undefined) return fallback;
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+function ExecutionSteps({ steps }: { steps: ExecutionStep[] }) {
+  if (!steps.length) return <p className="text-xs text-slate-500">No recorded steps.</p>;
+  return <div className="space-y-2">
+    {steps.map((step, index) => <div key={`${index}-${step.name}`} className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] text-slate-400">#{index + 1}</span>
+        <span className="text-xs font-semibold text-slate-700">{step.name}</span>
+        <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', step.kind === 'ai' ? 'bg-violet-100 text-violet-700' : step.kind === 'approval' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600')}>{step.kind}</span>
+        <span className="ml-auto"><StatusPill status={step.status.replaceAll('_', ' ')} /></span>
+      </div>
+      {step.output && <p className="mt-2 whitespace-pre-wrap text-[11px] leading-5 text-slate-500">{step.output}</p>}
+    </div>)}
+  </div>;
+}
+
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [location, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const { data } = useListNotifications({ query: { queryKey: getListNotificationsQueryKey(), refetchInterval: open ? false : 30_000 } });
+  const markRead = useMarkNotificationRead();
+  const markAll = useMarkAllNotificationsRead();
+  const notifications = data?.items || [];
+  const unread = data?.unreadCount || 0;
+  const refresh = () => queryClient.invalidateQueries({ queryKey: getListNotificationsQueryKey() });
+  const openNotification = (notification: Notification) => {
+    if (!notification.readAt) markRead.mutate({ id: notification.id }, { onSuccess: refresh });
+    setOpen(false);
+    if (notification.href && notification.href !== location) setLocation(notification.href);
+  };
+  return <div className="relative">
+    <button data-testid="button-notifications" title="Notifications" onClick={() => setOpen((current) => !current)} className="icon-button relative">
+      <Bell size={17} />
+      {unread > 0 && <span data-testid="notifications-unread-badge" className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">{unread > 9 ? '9+' : unread}</span>}
+    </button>
+    {open && <>
+      <button aria-label="Close notifications" onClick={() => setOpen(false)} className="fixed inset-0 z-30 cursor-default" />
+      <div data-testid="panel-notifications" className="absolute right-0 top-11 z-40 w-[340px] animate-modal-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div><p className="text-sm font-semibold text-slate-900">Notifications</p><p className="text-[10px] text-slate-400">{unread ? `${unread} unread` : 'All caught up'}</p></div>
+          <button data-testid="button-notifications-read-all" onClick={() => markAll.mutate(undefined, { onSuccess: refresh })} disabled={!unread || markAll.isPending} className="text-[11px] font-semibold text-teal-700 hover:text-teal-900 disabled:text-slate-300">Mark all read</button>
+        </div>
+        <div className="max-h-96 divide-y divide-slate-100 overflow-y-auto">
+          {!notifications.length && <p className="px-4 py-8 text-center text-xs text-slate-400">Notifications from approvals and automated runs land here.</p>}
+          {notifications.map((notification) => <button key={notification.id} data-testid={`notification-${notification.id}`} onClick={() => openNotification(notification)} className={cn('flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50', !notification.readAt && 'bg-teal-50/50')}>
+            <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', notification.readAt ? 'bg-slate-200' : 'bg-teal-500')} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-semibold text-slate-800">{notification.title}</span>
+              <span className="mt-0.5 block text-[11px] leading-5 text-slate-500">{notification.body}</span>
+              <span className="mt-1 block text-[10px] text-slate-400">{timeAgo(notification.createdAt)}</span>
+            </span>
+          </button>)}
+        </div>
+      </div>
+    </>}
+  </div>;
 }
 
 function Skeleton({ className = '' }: { className?: string }) {
@@ -190,7 +293,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="md:pl-[248px]">
         <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-slate-200/80 bg-[hsl(var(--background))]/90 px-5 backdrop-blur-md md:px-9">
           <div className="flex items-center gap-3"><button data-testid="button-open-mobile-nav" onClick={() => setMobileOpen(true)} className="rounded-md p-2 text-slate-600 hover:bg-slate-200/70 md:hidden"><Menu size={18} /></button><div className="flex items-center gap-2 text-xs text-slate-400"><span>Workspace</span><span>/</span><span className="font-medium text-slate-700">{currentLabel}</span></div></div>
-          <div className="flex items-center gap-3"><div className="hidden items-center gap-2 text-[11px] text-slate-500 sm:flex"><span className={cn('size-1.5 rounded-full', health?.status === 'ok' ? 'bg-teal-500' : 'bg-amber-400')} />{health?.status === 'ok' ? 'Systems nominal' : 'System status unavailable'}</div><button data-testid="button-global-search" title="Open activity search" onClick={() => setLocation('/activity')} className="icon-button"><Search size={17} /></button><button data-testid="button-notifications" title="Open the approval overview" onClick={() => setLocation('/')} className="icon-button"><Activity size={17} /></button></div>
+          <div className="flex items-center gap-3"><div className="hidden items-center gap-2 text-[11px] text-slate-500 sm:flex"><span className={cn('size-1.5 rounded-full', health?.status === 'ok' ? 'bg-teal-500' : 'bg-amber-400')} />{health?.status === 'ok' ? 'Systems nominal' : 'System status unavailable'}</div><button data-testid="button-global-search" title="Open activity search" onClick={() => setLocation('/activity')} className="icon-button"><Search size={17} /></button><NotificationBell /></div>
         </header>
         <main className="mx-auto max-w-[1500px] px-5 py-7 md:px-9 md:py-9">{children}</main>
       </div>
@@ -248,7 +351,7 @@ function DashboardPage() {
     <MetricStrip metrics={metrics} />
     <div className="mt-7 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
       <section className="panel overflow-hidden"><div className="panel-header"><div><p className="eyebrow">Live pulse</p><h2 className="panel-title">Automation activity</h2></div><Link href="/activity" data-testid="link-view-all-activity" className="text-xs font-semibold text-teal-700 hover:text-teal-900">View all <ArrowRight className="ml-1 inline" size={13} /></Link></div><div className="px-5"><ActivityList items={activities} limit={5} /></div></section>
-      <section className="panel"><div className="panel-header"><div><p className="eyebrow">Human in the loop</p><h2 className="panel-title">Approval queue</h2></div><span className="flex size-6 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-800">{approval?.pending ? '1' : '0'}</span></div>{approval?.pending ? <div className="p-5"><div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-center gap-2"><Avatar initials={approval.agent.slice(0, 2).toUpperCase()} color="#f6d48b" size="sm" /><span className="text-xs font-semibold text-amber-900">{approval.agent}</span><span className="ml-auto text-[10px] text-amber-700">Needs review</span></div><h3 className="mt-4 text-sm font-semibold leading-5 text-slate-900">{approval.title}</h3><p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">“{approval.excerpt}”</p><div className="mt-4 flex gap-2"><button data-testid="button-approve-item" onClick={() => { setDraft(approval.draft); decide('Approved', approval.draft); }} disabled={decideApproval.isPending} className="secondary-button flex-1"><Check size={14} />Approve</button><button data-testid="button-review-item" onClick={() => { setDraft(approval.draft); setReviewing(true); }} className="dark-button flex-1">Review</button></div>{decideApproval.isError && <p className="mt-2 text-xs text-rose-700">{formatError(decideApproval.error)}</p>}</div></div> : <div className="p-5"><EmptyState icon={ShieldCheck} title="Queue is clear" detail="No decisions are waiting for a human right now." /></div>}</section>
+      <section className="panel"><div className="panel-header"><div><p className="eyebrow">Human in the loop</p><h2 className="panel-title">Approval queue</h2></div><Link href="/approvals" data-testid="link-open-approvals" className="text-xs font-semibold text-teal-700 hover:text-teal-900">All approvals <ArrowRight className="ml-1 inline" size={13} /></Link></div>{approval?.pending ? <div className="p-5"><div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-center gap-2"><Avatar initials={approval.agent.slice(0, 2).toUpperCase()} color="#f6d48b" size="sm" /><span className="text-xs font-semibold text-amber-900">{approval.agent}</span><span className="ml-auto text-[10px] text-amber-700">Needs review</span></div><h3 className="mt-4 text-sm font-semibold leading-5 text-slate-900">{approval.title}</h3><p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">“{approval.excerpt}”</p><div className="mt-4 flex gap-2"><button data-testid="button-approve-item" onClick={() => { setDraft(approval.draft); decide('Approved', approval.draft); }} disabled={decideApproval.isPending} className="secondary-button flex-1"><Check size={14} />Approve</button><button data-testid="button-review-item" onClick={() => { setDraft(approval.draft); setReviewing(true); }} className="dark-button flex-1">Review</button></div>{decideApproval.isError && <p className="mt-2 text-xs text-rose-700">{formatError(decideApproval.error)}</p>}</div></div> : <div className="p-5"><EmptyState icon={ShieldCheck} title="Queue is clear" detail="No decisions are waiting for a human right now." /></div>}</section>
     </div>
     <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
       <section className="panel"><div className="panel-header"><div><p className="eyebrow">Delivery radar</p><h2 className="panel-title">Projects at a glance</h2></div><Link href="/projects" data-testid="link-view-projects" className="icon-button"><ArrowRight size={16} /></Link></div><div className="divide-y divide-slate-100">{projects.slice(0, 4).map((project) => <Link href="/projects" data-testid={`project-glance-${project.id}`} key={project.id} className="flex items-center gap-3 px-5 py-4 transition hover:bg-slate-50"><span className="size-2 rounded-full" style={{ background: project.color }} /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-3"><p className="truncate text-sm font-semibold text-slate-800">{project.name}</p><span className="text-xs font-mono text-slate-500">{project.progress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-500" style={{ width: `${project.progress}%` }} /></div></div><StatusPill status={project.health} /></Link>)}</div></section>
@@ -264,10 +367,12 @@ function CommandCenterModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState('');
   const [answer, setAnswer] = useState('');
+  const [toolCalls, setToolCalls] = useState<CommandToolCall[]>([]);
   const submit = () => {
     if (!prompt.trim() || command.isPending) return;
     command.mutate({ data: { prompt: prompt.trim() } }, { onSuccess: async (result) => {
       setAnswer(result.answer);
+      setToolCalls(result.toolCalls || []);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
         queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
@@ -280,6 +385,15 @@ function CommandCenterModal({ onClose }: { onClose: () => void }) {
     <div className="mt-4 flex justify-end"><button onClick={submit} disabled={!prompt.trim() || command.isPending} className="primary-button disabled:opacity-50">{command.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Send size={15} />}Ask Gemini</button></div>
     {command.isError && <p role="alert" className="mt-3 text-sm text-rose-700">{formatError(command.error)}</p>}
     {answer && <div className="mt-5 whitespace-pre-wrap rounded-lg border border-teal-200 bg-teal-50/70 p-4 text-sm leading-6 text-slate-700">{answer}</div>}
+    {answer && toolCalls.length > 0 && <div className="mt-4">
+      <p className="eyebrow">Sources used</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {toolCalls.map((call, index) => <div key={`${call.tool}-${index}`} data-testid={`command-tool-${index}`} className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1">
+          <span className="font-mono text-[10px] font-semibold text-slate-500">{call.tool}</span>
+          {(call.documents || []).map((documentName) => <Link key={documentName} href="/documents" className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 hover:bg-teal-100">{documentName}</Link>)}
+        </div>)}
+      </div>
+    </div>}
   </Modal>;
 }
 
@@ -306,48 +420,107 @@ function AgentCard({ agent }: { agent: Agent }) {
   return <Link href={`/agents/${agent.id}`} data-testid={`card-agent-${agent.id}`} className="panel group block p-5 transition duration-200 hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-md"><div className="flex items-start justify-between"><div className="flex items-center gap-3"><Avatar initials={agent.initials} color={agent.color} /><div><h2 className="font-display font-semibold tracking-[-0.02em] text-slate-900">{agent.name}</h2><p className="mt-0.5 text-[11px] text-slate-500">{agent.type}</p></div></div><StatusPill status={agent.status} /></div><p className="mt-5 line-clamp-2 min-h-10 text-sm leading-5 text-slate-600">{agent.description}</p><div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4"><div className="flex items-center gap-2 text-xs text-slate-500"><Activity size={14} className="text-teal-600" /><span><strong className="font-semibold text-slate-800">{agent.runs.toLocaleString()}</strong> runs</span></div><div className="flex -space-x-1">{agent.tools.slice(0, 3).map((tool) => <span key={tool} title={tool} className="flex size-6 items-center justify-center rounded border-2 border-white bg-slate-100 text-[9px] font-semibold text-slate-500">{tool.slice(0, 1)}</span>)}</div></div></Link>;
 }
 
+async function streamAgentRun(agentId: string, prompt: string, onDelta: (text: string) => void): Promise<void> {
+  const response = await fetch(`/api/agents/${agentId}/run/stream`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!response.ok || !response.body) {
+    const detail = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(detail.error || `The agent stream could not start (${response.status}).`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      let event = 'message';
+      let data = '';
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += line.slice(5).trim();
+      }
+      if (data) {
+        const payload = JSON.parse(data) as { text?: string; message?: string };
+        if (event === 'delta' && payload.text) onDelta(payload.text);
+        if (event === 'error') throw new Error(payload.message || 'The AI run failed.');
+      }
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+}
+
 function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading } = useListAgents();
-  const runAgent = useRunAgent();
   const queryClient = useQueryClient();
   const agent = (data || []).find((item) => item.id === id) || (data || [])[0];
   const [input, setInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [runError, setRunError] = useState('');
   const [sent, setSent] = useState<Array<{ key: number; prompt: string; answer: string | null }>>([]);
+  const { data: runData } = useListAgentRuns(agent?.id || 'none', { query: { queryKey: getListAgentRunsQueryKey(agent?.id || 'none'), enabled: Boolean(agent) } });
+  const runHistory = runData?.items || [];
   if (isLoading) return <Skeleton className="h-96" />;
   if (!agent) return <EmptyState icon={Bot} title="Agent not found" detail="This teammate may have been removed from the workspace." />;
-  const submit = () => {
+  const submit = async () => {
     const prompt = input.trim();
-    if (!prompt || runAgent.isPending) return;
+    if (!prompt || streaming) return;
     const key = Date.now();
     setSent((current) => [...current, { key, prompt, answer: null }]);
     setInput('');
-    runAgent.mutate({ id: agent.id, data: { prompt } }, {
-      onSuccess: async (result) => {
-        setSent((current) => current.map((item) => item.key === key ? { ...item, answer: result.answer } : item));
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() }),
-          queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
-          queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
-        ]);
-      },
-    });
+    setRunError('');
+    setStreaming(true);
+    try {
+      await streamAgentRun(agent.id, prompt, (text) => {
+        setSent((current) => current.map((item) => item.key === key ? { ...item, answer: (item.answer || '') + text } : item));
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListAgentRunsQueryKey(agent.id) }),
+        queryClient.invalidateQueries({ queryKey: getGetAiUsageQueryKey() }),
+      ]);
+    } catch (streamFailure) {
+      setRunError(formatError(streamFailure));
+    } finally {
+      setStreaming(false);
+    }
   };
   return <div className="animate-page-in">
     <Link href="/agents" data-testid="link-back-agents" className="mb-6 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-teal-700">← All agents</Link>
     <div className="grid gap-5 xl:grid-cols-[1fr_0.7fr]">
       <section className="panel overflow-hidden">
         <div className="border-b border-slate-100 bg-slate-50/70 p-6 md:p-8"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-center gap-4"><Avatar initials={agent.initials} color={agent.color} size="lg" /><div><p className="eyebrow">AI teammate</p><h1 className="mt-1 font-display text-3xl font-semibold tracking-[-0.05em] text-slate-950">{agent.name}</h1><p className="mt-1 text-sm text-slate-500">{agent.type}</p></div></div><StatusPill status={agent.status} /></div><p className="mt-6 max-w-2xl text-sm leading-6 text-slate-600">{agent.description}</p></div>
-        <div className="p-6 md:p-8"><div className="flex items-center justify-between"><div><p className="eyebrow">Test bench</p><h2 className="panel-title mt-1">Ask this teammate</h2></div><span className="text-xs text-slate-400">Gemini · private context follows workspace settings</span></div>
+        <div className="p-6 md:p-8"><div className="flex items-center justify-between"><div><p className="eyebrow">Test bench</p><h2 className="panel-title mt-1">Ask this teammate</h2></div><span className="text-xs text-slate-400">Streams live · private context follows workspace settings</span></div>
           <div className="mt-5 min-h-44 space-y-4 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
             {!sent.length && <div className="flex h-36 flex-col items-center justify-center text-center"><Sparkles size={20} className="text-teal-600" /><p className="mt-2 text-sm font-medium text-slate-700">Give {agent.name} a task</p><p className="mt-1 text-xs text-slate-500">Try: “What should I review first?”</p></div>}
-            {sent.map((item) => <div key={item.key} className="space-y-2"><div className="ml-auto max-w-[88%] rounded-lg bg-slate-900 px-3 py-2 text-sm text-white">{item.prompt}</div><div className="max-w-[92%] whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-sm leading-6 text-slate-700 shadow-sm">{item.answer || (runAgent.isPending ? <span className="inline-flex items-center gap-2 text-slate-400"><LoaderCircle size={14} className="animate-spin" />Thinking…</span> : 'Run failed. Try again.')}</div></div>)}
+            {sent.map((item) => <div key={item.key} className="space-y-2"><div className="ml-auto max-w-[88%] rounded-lg bg-slate-900 px-3 py-2 text-sm text-white">{item.prompt}</div><div data-testid={`agent-answer-${item.key}`} className="max-w-[92%] whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-sm leading-6 text-slate-700 shadow-sm">{item.answer || (streaming ? <span className="inline-flex items-center gap-2 text-slate-400"><LoaderCircle size={14} className="animate-spin" />Thinking…</span> : 'Run failed. Try again.')}</div></div>)}
           </div>
-          <div className="mt-3 flex gap-2"><input data-testid="input-agent-test" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submit(); }} placeholder="Ask a question or describe a task…" className="field-input" /><button data-testid="button-send-agent-test" onClick={submit} disabled={!input.trim() || runAgent.isPending} className="primary-button px-3 disabled:opacity-50">{runAgent.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button></div>
-          {runAgent.isError && <p role="alert" className="mt-2 text-xs text-rose-700">{formatError(runAgent.error)}</p>}
+          <div className="mt-3 flex gap-2"><input data-testid="input-agent-test" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submit(); }} placeholder="Ask a question or describe a task…" className="field-input" /><button data-testid="button-send-agent-test" onClick={() => submit()} disabled={!input.trim() || streaming} className="primary-button px-3 disabled:opacity-50">{streaming ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button></div>
+          {runError && <p role="alert" className="mt-2 text-xs text-rose-700">{runError}</p>}
         </div>
       </section>
-      <aside className="space-y-5"><div className="panel p-6"><p className="eyebrow">Operating record</p><div className="mt-5 grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Total runs</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{agent.runs.toLocaleString()}</p></div><div><p className="text-xs text-slate-500">Tool labels</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{agent.tools.length}</p></div></div></div><div className="panel p-6"><p className="eyebrow">Configured tool labels</p><p className="mt-1 text-xs leading-5 text-slate-500">These describe agent capabilities; no external services are connected.</p><div className="mt-4 space-y-2">{agent.tools.map((tool) => <div key={tool} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-teal-50 text-teal-700"><Database size={14} /></span><span className="text-sm font-medium text-slate-700">{tool}</span><span className="ml-auto text-[10px] text-slate-400">Defined</span></div>)}</div></div></aside>
+      <aside className="space-y-5"><div className="panel p-6"><p className="eyebrow">Operating record</p><div className="mt-5 grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Total runs</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{agent.runs.toLocaleString()}</p></div><div><p className="text-xs text-slate-500">Tool labels</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{agent.tools.length}</p></div></div></div><div className="panel p-6"><p className="eyebrow">Run history</p><p className="mt-1 text-xs leading-5 text-slate-500">The last 50 runs of this agent, newest first.</p><div className="mt-4 max-h-96 space-y-2 overflow-y-auto">{!runHistory.length && <p className="text-xs text-slate-400">No saved runs yet — start with the test bench.</p>}{runHistory.map((run) => <details key={run.id} data-testid={`agent-run-${run.id}`} className="rounded-lg border border-slate-100 px-3 py-2.5 open:bg-slate-50/70">
+            <summary className="cursor-pointer list-none">
+              <div className="flex items-center gap-2">
+                <StatusPill status={run.status} />
+                <span className="ml-auto font-mono text-[10px] text-slate-400">{timeAgo(run.createdAt)}</span>
+              </div>
+              <p className="mt-1.5 truncate text-xs font-medium text-slate-700">{run.prompt}</p>
+              <p className="mt-1 text-[10px] text-slate-400">{run.latencyMs ? formatDuration(run.latencyMs, '—') : '—'}{(run.inputTokens !== null && run.inputTokens !== undefined) || (run.outputTokens !== null && run.outputTokens !== undefined) ? ` · ${formatCompactNumber(run.inputTokens || 0)} in / ${formatCompactNumber(run.outputTokens || 0)} out tokens` : ''}</p>
+            </summary>
+            {run.answer && <p className="mt-2 whitespace-pre-wrap border-t border-slate-100 pt-2 text-[11px] leading-5 text-slate-600">{run.answer}</p>}
+          </details>)}</div></div><div className="panel p-6"><p className="eyebrow">Configured tool labels</p><p className="mt-1 text-xs leading-5 text-slate-500">These describe agent capabilities; no external services are connected.</p><div className="mt-4 space-y-2">{agent.tools.map((tool) => <div key={tool} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-teal-50 text-teal-700"><Database size={14} /></span><span className="text-sm font-medium text-slate-700">{tool}</span><span className="ml-auto text-[10px] text-slate-400">Defined</span></div>)}</div></div></aside>
     </div>
   </div>;
 }
@@ -370,10 +543,20 @@ function WorkflowComposer({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [trigger, setTrigger] = useState('');
+  const [triggerType, setTriggerType] = useState<'manual' | 'schedule' | 'webhook'>('manual');
+  const [schedule, setSchedule] = useState('0 9 * * 1');
   const [steps, setSteps] = useState('Review the trigger\nPrepare a result\nPause for human approval');
   const submit = () => {
     if (!name.trim() || !trigger.trim()) return;
-    mutation.mutate({ data: { name: name.trim(), trigger: trigger.trim(), status: 'Draft', steps: steps.split('\n').map((step) => step.trim()).filter(Boolean) } }, {
+    if (triggerType === 'schedule' && !schedule.trim()) return;
+    mutation.mutate({ data: {
+      name: name.trim(),
+      trigger: trigger.trim(),
+      triggerType,
+      schedule: triggerType === 'schedule' ? schedule.trim() : null,
+      status: 'Draft',
+      steps: steps.split('\n').map((step) => step.trim()).filter(Boolean),
+    } }, {
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getListWorkflowsQueryKey() });
         onClose();
@@ -383,10 +566,13 @@ function WorkflowComposer({ onClose }: { onClose: () => void }) {
   return <Modal title="Create workflow" onClose={onClose}><div className="space-y-4">
     <label className="field-label">Workflow name<input value={name} onChange={(event) => setName(event.target.value)} className="field-input" placeholder="e.g. New lead review" /></label>
     <label className="field-label">Trigger description<input value={trigger} onChange={(event) => setTrigger(event.target.value)} className="field-input" placeholder="e.g. When a new lead is added" /></label>
-    <label className="field-label">Steps, one per line<textarea value={steps} onChange={(event) => setSteps(event.target.value)} className="field-input min-h-28 resize-y" /></label>
-    <p className="text-xs leading-5 text-slate-500">New workflows start as drafts. “Run test” records the configured path; external actions are not connected.</p>
+    <label className="field-label">How does it start?<select data-testid="select-trigger-type" value={triggerType} onChange={(event) => setTriggerType(event.target.value as 'manual' | 'schedule' | 'webhook')} className="field-input"><option value="manual">Manual — run it yourself</option><option value="schedule">Schedule — on a cron rhythm</option><option value="webhook">Webhook — another tool calls it</option></select></label>
+    {triggerType === 'schedule' && <label className="field-label">Cron schedule<input data-testid="input-cron-schedule" value={schedule} onChange={(event) => setSchedule(event.target.value)} className="field-input font-mono" placeholder="0 9 * * 1" /><p className="mt-1 text-xs text-slate-500">Five fields: minute, hour, day of month, month, day of week. “0 9 * * 1” runs weekdays at 9am.</p></label>}
+    {triggerType === 'webhook' && <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600"><p className="flex items-center gap-2 font-semibold text-slate-700"><Link2 size={13} />Inbound webhook</p><p className="mt-1">Saving generates a private webhook URL. Any tool that can send an HTTP POST can kick off this workflow.</p></div>}
+    <label className="field-label">Steps, one per line<textarea value={steps} onChange={(event) => setSteps(event.target.value)} className="field-input min-h-28 resize-y" /><p className="mt-1 text-xs text-slate-500">Prefix a step with “ai:” to run Gemini, or “approval:” to pause the run until a human decides.</p></label>
+    <p className="text-xs leading-5 text-slate-500">New workflows start as drafts. Activate one to let schedules and webhooks fire.</p>
     {mutation.isError && <p role="alert" className="text-sm text-rose-700">{formatError(mutation.error)}</p>}
-    <div className="flex justify-end gap-2"><button onClick={onClose} className="secondary-button">Cancel</button><button onClick={submit} disabled={!name.trim() || !trigger.trim() || mutation.isPending} className="primary-button disabled:opacity-50">{mutation.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Plus size={15} />}Create draft</button></div>
+    <div className="flex justify-end gap-2"><button onClick={onClose} className="secondary-button">Cancel</button><button data-testid="button-submit-create-workflow" onClick={submit} disabled={!name.trim() || !trigger.trim() || (triggerType === 'schedule' && !schedule.trim()) || mutation.isPending} className="primary-button disabled:opacity-50">{mutation.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Plus size={15} />}Create draft</button></div>
   </div></Modal>;
 }
 
@@ -395,11 +581,20 @@ function WorkflowEditor({ workflow, onClose }: { workflow: Workflow; onClose: ()
   const queryClient = useQueryClient();
   const [name, setName] = useState(workflow.name);
   const [trigger, setTrigger] = useState(workflow.trigger);
+  const [triggerType, setTriggerType] = useState<'manual' | 'schedule' | 'webhook'>(workflow.triggerType);
+  const [schedule, setSchedule] = useState(workflow.schedule || '0 9 * * 1');
   const [status, setStatus] = useState<Workflow['status']>(workflow.status);
   const [steps, setSteps] = useState(workflow.steps.join('\n'));
   const submit = () => mutation.mutate({
     id: workflow.id,
-    data: { name: name.trim(), trigger: trigger.trim(), status, steps: steps.split('\n').map((step) => step.trim()).filter(Boolean) },
+    data: {
+      name: name.trim(),
+      trigger: trigger.trim(),
+      triggerType,
+      schedule: triggerType === 'schedule' ? schedule.trim() : null,
+      status,
+      steps: steps.split('\n').map((step) => step.trim()).filter(Boolean),
+    },
   }, { onSuccess: async () => {
     await queryClient.invalidateQueries({ queryKey: getListWorkflowsQueryKey() });
     onClose();
@@ -407,10 +602,13 @@ function WorkflowEditor({ workflow, onClose }: { workflow: Workflow; onClose: ()
   return <Modal title="Configure workflow" onClose={onClose}><div className="space-y-4">
     <label className="field-label">Name<input value={name} onChange={(event) => setName(event.target.value)} className="field-input" /></label>
     <label className="field-label">Trigger<input value={trigger} onChange={(event) => setTrigger(event.target.value)} className="field-input" /></label>
-    <label className="field-label">Status<select value={status} onChange={(event) => setStatus(event.target.value as Workflow['status'])} className="field-input"><option>Active</option><option>Draft</option><option>Paused</option></select></label>
-    <label className="field-label">Steps, one per line<textarea value={steps} onChange={(event) => setSteps(event.target.value)} className="field-input min-h-28 resize-y" /></label>
+    <label className="field-label">How does it start?<select value={triggerType} onChange={(event) => setTriggerType(event.target.value as 'manual' | 'schedule' | 'webhook')} className="field-input"><option value="manual">Manual — run it yourself</option><option value="schedule">Schedule — on a cron rhythm</option><option value="webhook">Webhook — another tool calls it</option></select></label>
+    {triggerType === 'schedule' && <label className="field-label">Cron schedule<input value={schedule} onChange={(event) => setSchedule(event.target.value)} className="field-input font-mono" placeholder="0 9 * * 1" /><p className="mt-1 text-xs text-slate-500">Five fields: minute, hour, day of month, month, day of week.</p></label>}
+    {triggerType === 'webhook' && <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600">The webhook URL is available on the workflow page{workflow.webhookToken ? ' — it stays the same after saving.' : ' and is generated when you save.'}</div>}
+    <label className="field-label">Status<select value={status} onChange={(event) => setStatus(event.target.value as Workflow['status'])} className="field-input"><option>Active</option><option>Draft</option><option>Paused</option></select><p className="mt-1 text-xs text-slate-500">Only active workflows respond to schedules and webhooks.</p></label>
+    <label className="field-label">Steps, one per line<textarea value={steps} onChange={(event) => setSteps(event.target.value)} className="field-input min-h-28 resize-y" /><p className="mt-1 text-xs text-slate-500">Prefix a step with “ai:” to run Gemini, or “approval:” to pause until a human decides.</p></label>
     {mutation.isError && <p role="alert" className="text-sm text-rose-700">{formatError(mutation.error)}</p>}
-    <div className="flex justify-end gap-2"><button onClick={onClose} className="secondary-button">Cancel</button><button onClick={submit} disabled={!name.trim() || !trigger.trim() || mutation.isPending} className="primary-button disabled:opacity-50">{mutation.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Check size={15} />}Save workflow</button></div>
+    <div className="flex justify-end gap-2"><button onClick={onClose} className="secondary-button">Cancel</button><button onClick={submit} disabled={!name.trim() || !trigger.trim() || (triggerType === 'schedule' && !schedule.trim()) || mutation.isPending} className="primary-button disabled:opacity-50">{mutation.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Check size={15} />}Save workflow</button></div>
   </div></Modal>;
 }
 
@@ -419,33 +617,113 @@ function WorkflowDetailPage() {
   const { data } = useListWorkflows();
   const runWorkflow = useRunWorkflow();
   const queryClient = useQueryClient();
-  const workflow = (data || []).find((item) => item.id === id) || (data || [])[0];
-  const [lastRun, setLastRun] = useState<string | null>(null);
   const [configuring, setConfiguring] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const workflow = (data || []).find((item) => item.id === id) || (data || [])[0];
+  const { data: executionData } = useListWorkflowExecutions(workflow?.id || 'none', {
+    query: {
+      queryKey: getListWorkflowExecutionsQueryKey(workflow?.id || 'none'),
+      enabled: Boolean(workflow),
+      refetchInterval: (query) => ((query.state.data as WorkflowExecutionList | undefined)?.items || []).some((execution) => execution.status === 'Running' || execution.status === 'Waiting') ? 2_000 : false,
+    },
+  });
+  const executions = executionData?.items || [];
+  const liveExecution = executions.find((execution) => execution.status === 'Running' || execution.status === 'Waiting');
   if (!workflow) return <EmptyState icon={Zap} title="Workflow not found" detail="This workflow is no longer available." />;
-  const run = () => runWorkflow.mutate({ id: workflow.id }, { onSuccess: async (execution) => {
-    setLastRun(`${execution.status} · ${execution.duration}`);
+  const run = () => runWorkflow.mutate({ id: workflow.id }, { onSuccess: async () => {
     await Promise.all([
+      queryClient.invalidateQueries({ queryKey: getListWorkflowExecutionsQueryKey(workflow.id) }),
       queryClient.invalidateQueries({ queryKey: getListWorkflowsQueryKey() }),
       queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
-      queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
     ]);
   } });
+  const webhookUrl = workflow.webhookToken ? `${window.location.origin}/api/webhooks/workflows/${workflow.webhookToken}` : null;
+  const copyWebhook = async () => {
+    if (!webhookUrl) return;
+    await navigator.clipboard.writeText(webhookUrl);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
   return <div className="animate-page-in">
     <Link href="/workflows" data-testid="link-back-workflows" className="mb-6 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-teal-700">← All workflows</Link>
     <div className="grid gap-5 xl:grid-cols-[1fr_0.66fr]">
       <section className="panel">
         <div className="border-b border-slate-100 p-6 md:p-8"><div className="flex items-start justify-between gap-4"><div className="flex gap-4"><span className="mt-1 size-3 rounded-full" style={{ background: workflow.color }} /><div><p className="eyebrow">Workflow inspection</p><h1 className="mt-2 font-display text-3xl font-semibold tracking-[-0.05em] text-slate-950">{workflow.name}</h1><p className="mt-2 text-sm text-slate-500">Triggered when {workflow.trigger.toLowerCase()}</p></div></div><StatusPill status={workflow.status} /></div>
+          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+            <p className="flex items-center gap-2 text-xs font-semibold text-slate-700"><Zap size={13} className="text-teal-600" />Starts {workflow.triggerType === 'schedule' ? 'on a schedule' : workflow.triggerType === 'webhook' ? 'from an inbound webhook' : 'when you run it'}</p>
+            {workflow.triggerType === 'schedule' && <p className="mt-2 text-xs text-slate-600"><span className="font-mono font-semibold text-slate-800">{workflow.schedule}</span>{workflow.nextRunAt ? ` · next run ${timeAgo(workflow.nextRunAt).replace(' ago', '') === 'Just now' ? 'imminent' : new Date(workflow.nextRunAt).toLocaleString()}` : ''}</p>}
+            {workflow.triggerType === 'webhook' && (webhookUrl ? <div className="mt-2 flex flex-wrap items-center gap-2"><code data-testid="webhook-url" className="max-w-full truncate rounded bg-white px-2 py-1 font-mono text-[11px] text-slate-700">{webhookUrl}</code><button data-testid="button-copy-webhook" onClick={copyWebhook} className="secondary-button px-2 py-1 text-[11px]">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? 'Copied' : 'Copy'}</button><span className="text-[10px] text-slate-400">POST JSON to this URL to start a run.</span></div> : <p className="mt-2 text-xs text-slate-500">Save the workflow to generate its webhook URL.</p>)}
+          </div>
           <div className="mt-7 flex flex-wrap gap-2"><button data-testid="button-run-workflow" onClick={run} disabled={runWorkflow.isPending || workflow.status === 'Paused'} className="primary-button disabled:opacity-50">{runWorkflow.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}Run test</button><button data-testid="button-workflow-settings" onClick={() => setConfiguring(true)} className="secondary-button"><Settings2 size={15} />Configure</button></div>
-          <p className="mt-3 text-xs text-slate-500">Tests record a run of the configured steps. External services are not connected.</p>
-          {lastRun && <div className="mt-4 rounded-lg bg-teal-50 px-3 py-2 text-xs font-medium text-teal-800">Latest test: {lastRun}</div>}
+          <p className="mt-3 text-xs text-slate-500">Runs execute in the background. Steps prefixed “ai:” call Gemini; “approval:” steps pause the run until you decide.</p>
+          {liveExecution && <div data-testid="workflow-live-run" className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800"><span className="inline-flex items-center gap-2"><LoaderCircle size={13} className="animate-spin" />{liveExecution.status === 'Waiting' ? 'Waiting for your approval on the approvals page…' : 'Run in progress…'}</span></div>}
           {runWorkflow.isError && <p role="alert" className="mt-3 text-xs text-rose-600">{formatError(runWorkflow.error)}</p>}
         </div>
-        <div className="p-6 md:p-8"><p className="eyebrow">Configured steps</p><div className="mt-5 space-y-0">{workflow.steps.map((step, index) => <div key={`${index}-${step}`} className="relative flex gap-4 pb-6 last:pb-0"><div className="relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-teal-50 font-mono text-xs font-semibold text-teal-700">{index + 1}</div>{index < workflow.steps.length - 1 && <span className="absolute left-[13px] top-7 h-[calc(100%-10px)] w-px bg-teal-100" />}<div><p className="text-sm font-semibold text-slate-800">{step}</p><p className="mt-1 text-xs text-slate-500">Recorded in the workflow test history.</p></div></div>)}</div></div>
+        <div className="p-6 md:p-8"><p className="eyebrow">Configured steps</p><div className="mt-5 space-y-0">{workflow.steps.map((step, index) => <div key={`${index}-${step}`} className="relative flex gap-4 pb-6 last:pb-0"><div className="relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-teal-50 font-mono text-xs font-semibold text-teal-700">{index + 1}</div>{index < workflow.steps.length - 1 && <span className="absolute left-[13px] top-7 h-[calc(100%-10px)] w-px bg-teal-100" />}<div><p className="text-sm font-semibold text-slate-800">{step}</p><p className="mt-1 text-xs text-slate-500">{step.startsWith('ai:') ? 'Calls Gemini when the run reaches this step.' : step.startsWith('approval:') || step.toLowerCase().includes('approval') ? 'Pauses the run for a human decision.' : 'Recorded in the workflow run history.'}</p></div></div>)}</div></div>
       </section>
-      <aside className="space-y-5"><div className="panel p-6"><p className="eyebrow">Performance</p><div className="mt-5 grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Total runs</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{workflow.runs.toLocaleString()}</p></div><div><p className="text-xs text-slate-500">Success rate</p><p className="mt-1 font-display text-2xl font-semibold text-teal-700">{workflow.success}</p></div></div><div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500"><span>Last run</span><span className="font-medium text-slate-800">{workflow.lastRun}</span></div></div><div className="rounded-xl border border-amber-200 bg-amber-50 p-6"><div className="flex items-center gap-2 text-amber-800"><ShieldCheck size={17} /><p className="text-sm font-semibold">Safety boundary</p></div><p className="mt-3 text-xs leading-5 text-amber-900/75">A workflow test records configured steps only. No external message is sent, and approval decisions stay in the workspace.</p></div></aside>
+      <aside className="space-y-5">
+        <div className="panel p-6"><p className="eyebrow">Performance</p><div className="mt-5 grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Total runs</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{workflow.runs.toLocaleString()}</p></div><div><p className="text-xs text-slate-500">Success rate</p><p className="mt-1 font-display text-2xl font-semibold text-teal-700">{workflow.success}</p></div></div><div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500"><span>Last run</span><span className="font-medium text-slate-800">{workflow.lastRun}</span></div></div>
+        <div className="panel p-6"><p className="eyebrow">Run history</p><p className="mt-1 text-xs leading-5 text-slate-500">The last {executions.length || 0} executions of this workflow, newest first.</p><div data-testid="workflow-executions" className="mt-4 max-h-[26rem] space-y-2 overflow-y-auto">{!executions.length && <p className="text-xs text-slate-400">No executions yet — run a test to see one here.</p>}
+          {executions.map((execution) => <details key={execution.id} data-testid={`workflow-execution-${execution.id}`} className="rounded-lg border border-slate-100 px-3 py-2.5 open:bg-slate-50/70">
+            <summary className="cursor-pointer list-none">
+              <div className="flex items-center gap-2">
+                <StatusPill status={execution.status === 'Waiting' ? 'Waiting approval' : execution.status} />
+                <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', execution.triggerSource === 'schedule' ? 'bg-violet-100 text-violet-700' : execution.triggerSource === 'webhook' ? 'bg-sky-100 text-sky-700' : 'bg-slate-200 text-slate-600')}>{execution.triggerSource}</span>
+                <span className="ml-auto font-mono text-[10px] text-slate-400">{timeAgo(execution.startedAt)}</span>
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">{formatDuration(execution.durationMs, execution.duration)} · {execution.steps.length} steps</p>
+              {execution.error && <p className="mt-1 text-[11px] font-medium text-rose-600">{execution.error}</p>}
+            </summary>
+            <div className="mt-2 border-t border-slate-100 pt-2"><ExecutionSteps steps={execution.steps} /></div>
+          </details>)}
+        </div></div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6"><div className="flex items-center gap-2 text-amber-800"><ShieldCheck size={17} /><p className="text-sm font-semibold">Safety boundary</p></div><p className="mt-3 text-xs leading-5 text-amber-900/75">Workflow runs record configured steps only. No external message is sent, and approval decisions stay in the workspace.</p></div>
+      </aside>
     </div>
     {configuring && <WorkflowEditor workflow={workflow} onClose={() => setConfiguring(false)} />}
+  </div>;
+}
+
+function ApprovalsPage() {
+  const { data, isLoading, isError, error, refetch } = useListApprovals();
+  const decideApproval = useDecideApproval();
+  const queryClient = useQueryClient();
+  const [reviewing, setReviewing] = useState<Approval | null>(null);
+  const [draft, setDraft] = useState('');
+  const items = data?.items || [];
+  const pending = items.filter((item) => item.status === 'Pending');
+  const decided = items.filter((item) => item.status !== 'Pending');
+  const decide = (status: 'Approved' | 'Rejected') => {
+    if (!reviewing) return;
+    decideApproval.mutate({ id: reviewing.id, data: { status, draft: draft.trim() || reviewing.draft } }, {
+      onSuccess: async () => {
+        setReviewing(null);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getListApprovalsQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getListWorkflowExecutionsQueryKey(reviewing.workflowId || 'none') }),
+        ]);
+      },
+    });
+  };
+  return <div className="animate-page-in">
+    <PageHeading eyebrow="Human in the loop" title="Approvals" detail="AI runs pause here before continuing. Approve a draft to resume the workflow, or reject it to stop the run." />
+    {isLoading ? <div className="space-y-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-28" />)}</div>
+      : isError ? <ErrorState message={formatError(error)} retry={() => refetch()} />
+        : !items.length ? <EmptyState icon={ShieldCheck} title="Nothing waiting on you" detail="When a workflow or agent needs a human decision, it appears here." />
+          : <>
+            <section className="panel"><div className="panel-header"><div><p className="eyebrow">{pending.length ? `${pending.length} waiting` : 'Queue is clear'}</p><h2 className="panel-title">Waiting for your decision</h2></div></div>
+              {pending.length ? <div className="divide-y divide-slate-100">{pending.map((approval) => <div key={approval.id} data-testid={`approval-pending-${approval.id}`} className="p-5">
+                <div className="flex flex-wrap items-center gap-3"><Avatar initials={approval.agent.slice(0, 2).toUpperCase()} color="#f6d48b" size="sm" /><span className="text-xs font-semibold text-amber-900">{approval.agent}</span><StatusPill status={approval.status} />{approval.workflowId && <Link href={`/workflows/${approval.workflowId}`} className="ml-auto text-[11px] font-semibold text-teal-700 hover:text-teal-900">View workflow <ArrowRight className="ml-1 inline" size={12} /></Link>}</div>
+                <h3 className="mt-3 text-sm font-semibold leading-5 text-slate-900">{approval.title}</h3>
+                <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-500">“{approval.excerpt}”</p>
+                <div className="mt-4 flex gap-2"><button data-testid={`button-approve-${approval.id}`} onClick={() => { setReviewing(approval); setDraft(approval.draft); decide('Approved'); }} disabled={decideApproval.isPending} className="secondary-button"><Check size={14} />Approve as drafted</button><button data-testid={`button-review-${approval.id}`} onClick={() => { setReviewing(approval); setDraft(approval.draft); }} className="dark-button">Review & edit</button></div>
+              </div>)}</div> : <div className="p-5"><EmptyState icon={ShieldCheck} title="No decisions pending" detail="Automated runs that hit an approval step will pause here." /></div>}
+            </section>
+            {decided.length > 0 && <section className="panel mt-5"><div className="panel-header"><div><p className="eyebrow">{decided.length} decided</p><h2 className="panel-title">Recent decisions</h2></div></div><div className="divide-y divide-slate-100">{decided.map((approval) => <div key={approval.id} className="flex flex-wrap items-center gap-3 px-5 py-4"><Avatar initials={approval.agent.slice(0, 2).toUpperCase()} color="#d8ede9" size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{approval.title}</p><p className="mt-0.5 text-[11px] text-slate-500">{approval.agent}</p></div><StatusPill status={approval.status} /></div>)}</div></section>}
+          </>}
+    {reviewing && <Modal title="Review AI draft" onClose={() => setReviewing(null)}><p className="mb-3 text-sm text-slate-600">{reviewing.title}</p><div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">“{reviewing.excerpt}”</div><label className="field-label">Proposed response<textarea value={draft} onChange={(event) => setDraft(event.target.value)} className="field-input min-h-36 resize-y" /></label><p className="mt-2 text-xs text-slate-500">Approving resumes the workflow run; rejecting stops it. Nothing is sent outside the workspace.</p><div className="mt-5 flex justify-end gap-2"><button data-testid="button-reject-approval" onClick={() => decide('Rejected')} disabled={decideApproval.isPending} className="secondary-button">Reject</button><button data-testid="button-confirm-approval" onClick={() => decide('Approved')} disabled={decideApproval.isPending || !draft.trim()} className="primary-button">{decideApproval.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Check size={15} />}Approve draft</button></div>{decideApproval.isError && <p className="mt-3 text-xs text-rose-700">{formatError(decideApproval.error)}</p>}</Modal>}
   </div>;
 }
 
@@ -475,11 +753,19 @@ function DocumentsPage() {
   const { data, isLoading, isError, error, refetch } = useListDocuments();
   const createDocument = useCreateDocument();
   const deleteDocument = useDeleteDocument();
+  const searchDocuments = useSearchDocuments();
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [uploaded, setUploaded] = useState('');
   const [uploadError, setUploadError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<DocumentSearchResponse | null>(null);
   const documents = data || [];
+  const runSearch = () => {
+    const query = searchQuery.trim();
+    if (!query) { setSearchResult(null); return; }
+    searchDocuments.mutate({ data: { query } }, { onSuccess: (result) => setSearchResult(result) });
+  };
   const upload = async (file?: File) => {
     if (!file) return;
     setUploadError('');
@@ -540,6 +826,16 @@ function DocumentsPage() {
     {uploaded && <div role="status" className="mb-4 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-xs text-teal-800"><strong>Processed:</strong> {uploaded}</div>}
     {uploadError && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{uploadError}</div>}
     {deleteDocument.isError && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formatError(deleteDocument.error)}</div>}
+    <section className="panel mb-5 p-5"><div className="flex flex-col gap-3 sm:flex-row"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><input data-testid="input-search-documents" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') runSearch(); }} placeholder="Search across document contents — “renewal deadline”, “pricing”…" className="field-input pl-9" /></div><button data-testid="button-search-documents" onClick={runSearch} disabled={!searchQuery.trim() || searchDocuments.isPending} className="primary-button disabled:opacity-50">{searchDocuments.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Search size={15} />}Search</button></div>
+      {searchResult && <div data-testid="document-search-results" className="mt-4">
+        <p className="text-xs font-semibold text-slate-600">{searchResult.results.length ? `${searchResult.results.length} ${searchResult.results.length === 1 ? 'match' : 'matches'} · ${searchResult.mode === 'vector' ? 'semantic' : 'keyword'} search` : 'No matches found in your documents.'}</p>
+        <div className="mt-3 space-y-2">{searchResult.results.map((hit) => <div key={`${hit.documentId}-${hit.chunkIndex}`} className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+          <div className="flex flex-wrap items-center gap-2"><span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800"><FileText size={12} className="text-teal-600" />{hit.documentName}</span><span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700">{Math.round(hit.score * 100)}% match</span><span className="ml-auto font-mono text-[10px] text-slate-400">chunk {hit.chunkIndex}</span></div>
+          <p className="mt-2 line-clamp-3 text-[11px] leading-5 text-slate-500">{hit.content}</p>
+        </div>)}</div>
+      </div>}
+      {searchDocuments.isError && <p role="alert" className="mt-3 text-xs text-rose-700">{formatError(searchDocuments.error)}</p>}
+    </section>
     {isLoading ? (
       <div className="space-y-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-20" />)}</div>
     ) : isError ? (
@@ -571,6 +867,9 @@ function DocumentsPage() {
 function AnalyticsPage() {
   const { data: workflows } = useListWorkflows();
   const { data: agents } = useListAgents();
+  const [usageDays, setUsageDays] = useState(14);
+  const { data: usage, isLoading: usageLoading } = useGetAiUsage({ days: usageDays });
+  const usageReport = usage as AiUsageReport | undefined;
   const savedWorkflows = workflows || [];
   const savedAgents = agents || [];
   const workflowRuns = savedWorkflows.reduce((sum, item) => sum + item.runs, 0);
@@ -596,6 +895,26 @@ function AnalyticsPage() {
       <section className="panel p-6"><p className="eyebrow">Agent run totals</p><h2 className="panel-title mt-1">Who is carrying the work</h2><div className="mt-6 space-y-5">{savedAgents.slice(0, 6).map((agent) => <div data-testid={`usage-agent-${agent.id}`} key={agent.id}><div className="mb-2 flex items-center justify-between"><div className="flex items-center gap-2"><Avatar initials={agent.initials} color={agent.color} size="sm" /><span className="text-xs font-semibold text-slate-700">{agent.name}</span></div><span className="font-mono text-xs text-slate-500">{agent.runs.toLocaleString()} runs</span></div><div className="h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-slate-800" style={{ width: `${Math.max(2, (agent.runs / Math.max(1, ...savedAgents.map((row) => row.runs))) * 100)}%` }} /></div></div>)}{!savedAgents.length && <EmptyState icon={Bot} title="No agent data yet" detail="Agent utilization appears after the first runs." />}</div></section>
     </div>
     <section className="panel mt-5"><div className="panel-header"><div><p className="eyebrow">Workflow status</p><h2 className="panel-title">Configured paths</h2></div></div><div className="divide-y divide-slate-100">{savedWorkflows.map((workflow) => <div key={workflow.id} className="flex flex-wrap items-center gap-4 px-5 py-4"><span className="size-2 rounded-full" style={{ background: workflow.color }} /><span className="min-w-40 flex-1 text-sm font-semibold text-slate-800">{workflow.name}</span><StatusPill status={workflow.status} /><span className="text-xs text-slate-500">{workflow.runs.toLocaleString()} runs</span><span className="w-12 text-right font-mono text-xs text-teal-700">{workflow.success}</span></div>)}</div></section>
+    <section className="panel mt-5"><div className="panel-header"><div><p className="eyebrow">Gemini consumption</p><h2 className="panel-title">AI usage</h2></div><select data-testid="select-usage-days" value={usageDays} onChange={(event) => setUsageDays(Number(event.target.value))} className="field-input w-auto"><option value={7}>Last 7 days</option><option value={14}>Last 14 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></div>
+      {usageLoading ? <div className="p-6"><Skeleton className="h-32" /></div> : !usageReport || usageReport.totals.calls === 0 ? <div className="p-6"><EmptyState icon={Sparkles} title="No AI activity yet" detail="Agent runs, command center questions, and workflow AI steps are counted here once they happen." /></div> : <div className="p-6">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="metric-card" data-testid="usage-calls"><span className="text-xs text-slate-500">Gemini calls</span><p className="mt-3 font-display text-3xl font-semibold text-slate-950">{usageReport.totals.calls.toLocaleString()}</p><span className="mt-2 inline-flex text-xs text-slate-500">over the last {usageDays} days</span></div>
+          <div className="metric-card" data-testid="usage-input-tokens"><span className="text-xs text-slate-500">Input tokens</span><p className="mt-3 font-display text-3xl font-semibold text-slate-950">{formatCompactNumber(usageReport.totals.inputTokens)}</p><span className="mt-2 inline-flex text-xs text-slate-500">prompts and document context</span></div>
+          <div className="metric-card" data-testid="usage-output-tokens"><span className="text-xs text-slate-500">Output tokens</span><p className="mt-3 font-display text-3xl font-semibold text-slate-950">{formatCompactNumber(usageReport.totals.outputTokens)}</p><span className="mt-2 inline-flex text-xs text-slate-500">answers, drafts, and embeddings</span></div>
+        </div>
+        <div className="mt-7">
+          <p className="eyebrow">Calls per day</p>
+          <div data-testid="usage-daily-bars" className="mt-3 flex h-32 items-end gap-1.5">
+            {usageReport.daily.map((day) => { const max = Math.max(1, ...usageReport.daily.map((entry) => entry.calls)); return <div key={day.date} title={`${day.date}: ${day.calls} calls`} className="group relative flex-1"><div className="w-full rounded-t bg-teal-500/80 transition group-hover:bg-teal-600" style={{ height: `${Math.max(3, (day.calls / max) * 112)}px` }} /></div>; })}
+          </div>
+          <div className="mt-1.5 flex justify-between font-mono text-[10px] text-slate-400"><span>{usageReport.daily[0]?.date}</span><span>{usageReport.daily[usageReport.daily.length - 1]?.date}</span></div>
+        </div>
+        <div className="mt-7 overflow-hidden rounded-lg border border-slate-100">
+          <div className="grid grid-cols-[1.2fr_0.6fr_0.8fr_0.8fr] gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400"><span>Feature</span><span className="text-right">Calls</span><span className="text-right">Input tokens</span><span className="text-right">Output tokens</span></div>
+          <div className="divide-y divide-slate-100">{usageReport.byFeature.map((feature) => <div key={feature.feature} className="grid grid-cols-[1.2fr_0.6fr_0.8fr_0.8fr] gap-3 px-4 py-2.5 text-xs"><span className="font-semibold capitalize text-slate-700">{feature.feature.replaceAll('_', ' ')}</span><span className="text-right font-mono text-slate-600">{feature.calls.toLocaleString()}</span><span className="text-right font-mono text-slate-600">{formatCompactNumber(feature.inputTokens)}</span><span className="text-right font-mono text-slate-600">{formatCompactNumber(feature.outputTokens)}</span></div>)}</div>
+        </div>
+      </div>}
+    </section>
   </div>;
 }
 
@@ -647,7 +966,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 function Router() {
   const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}><Shell><Switch><Route path="/" component={DashboardPage} /><Route path="/agents" component={AgentsPage} /><Route path="/agents/:id" component={AgentDetailPage} /><Route path="/workflows" component={WorkflowsPage} /><Route path="/workflows/:id" component={WorkflowDetailPage} /><Route path="/projects" component={ProjectsPage} /><Route path="/documents" component={DocumentsPage} /><Route path="/analytics" component={AnalyticsPage} /><Route path="/activity" component={ActivityPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></Shell></ErrorBoundary>;
+  return <ErrorBoundary resetKey={location}><Shell><Switch><Route path="/" component={DashboardPage} /><Route path="/agents" component={AgentsPage} /><Route path="/agents/:id" component={AgentDetailPage} /><Route path="/workflows" component={WorkflowsPage} /><Route path="/workflows/:id" component={WorkflowDetailPage} /><Route path="/approvals" component={ApprovalsPage} /><Route path="/projects" component={ProjectsPage} /><Route path="/documents" component={DocumentsPage} /><Route path="/analytics" component={AnalyticsPage} /><Route path="/activity" component={ActivityPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></Shell></ErrorBoundary>;
 }
 
 function AuthGate({ children }: { children: ReactNode }) {

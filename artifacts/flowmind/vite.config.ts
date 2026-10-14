@@ -8,7 +8,7 @@ const localAuth = process.env.FLOWMIND_AUTH_MODE === 'local';
 const apiPort = Number(process.env.API_PORT || 8080);
 
 if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
+  throw new Error(`Invalid PORT value: "${process.env.PORT}"`);
 }
 
 const basePath = process.env.BASE_PATH || '/';
