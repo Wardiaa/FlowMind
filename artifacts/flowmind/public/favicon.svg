@@ -1,3 +1,9 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FlowMind">
+  <title>FlowMind</title>
+  <rect width="28" height="28" rx="8" fill="#35BBA5" />
+  <g fill="#1D2435">
+    <rect x="8.24" y="6.16" width="11.52" height="3.52" rx="1.76" transform="rotate(33 14 7.92)" />
+    <rect x="8.24" y="18.32" width="11.52" height="3.52" rx="1.76" transform="rotate(-33 14 20.08)" />
+    <rect x="6.8" y="12.24" width="17.6" height="3.52" rx="1.76" />
+  </g>
 </svg>
