@@ -84,8 +84,13 @@ const apiErrorHandler: ErrorRequestHandler = (error, req, res, next) => {
       : 500;
   if (status >= 500) req.log.error({ err: error }, "API request failed");
   else req.log.info({ status, err: error }, "API request rejected");
+  const exposeMessage = error instanceof Error && (error as { expose?: boolean }).expose === true;
   res.status(status).json({
-    error: status === 400 ? "The request contains invalid data." : "The request could not be completed.",
+    error: exposeMessage
+      ? error.message
+      : status === 400
+        ? "The request contains invalid data."
+        : "The request could not be completed.",
   });
 };
 

@@ -1,6 +1,9 @@
 import { GoogleGenAI, type Content, type FunctionCall, type Part, type Tool } from "@google/genai";
+import { assertChatBudget } from "./aiUsage";
 
-export const CHAT_MODEL = "gemini-3-flash-preview";
+// gemini-3.5-flash-lite has by far the largest free-tier bucket; preview models
+// like gemini-3-flash-preview allow only ~20 requests/day. Override via GEMINI_CHAT_MODEL.
+export const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL?.trim() || "gemini-3.5-flash-lite";
 export const EMBEDDING_MODEL = "gemini-embedding-001";
 export const EMBEDDING_DIMENSIONS = 768;
 
@@ -58,6 +61,7 @@ async function withRetries<T>(work: () => Promise<T>): Promise<T> {
 export async function generateGeminiAnswer(
   prompt: string,
 ): Promise<{ answer: string; usage: GeminiUsage; latencyMs: number }> {
+  await assertChatBudget();
   const ai = getClient();
   const startedAt = Date.now();
   await acquire();
@@ -88,6 +92,7 @@ export async function streamGeminiAnswer(
   prompt: string,
   onDelta: (text: string) => void,
 ): Promise<{ usage: GeminiUsage; latencyMs: number }> {
+  await assertChatBudget();
   const ai = getClient();
   const startedAt = Date.now();
   await acquire();
@@ -136,6 +141,7 @@ export async function generateGeminiTurn(
   contents: Content[],
   tools: Tool[],
 ): Promise<{ text: string | null; functionCalls: FunctionCall[]; parts: Part[]; usage: GeminiUsage; latencyMs: number }> {
+  await assertChatBudget();
   const ai = getClient();
   const startedAt = Date.now();
   await acquire();
