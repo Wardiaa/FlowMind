@@ -29,11 +29,27 @@ function release(): void {
 
 let client: GoogleGenAI | null = null;
 
-function getClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("Gemini is not configured. Add GEMINI_API_KEY to workspace Secrets.");
-  if (!client) client = new GoogleGenAI({ apiKey });
-  return client;
+// One shared client per API key: the server-level GEMINI_API_KEY plus any
+// personal workspace keys resolved for a request.
+const personalClients = new Map<string, GoogleGenAI>();
+
+function getClient(apiKey?: string | null): GoogleGenAI {
+  const key = apiKey?.trim() || process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Gemini is not configured. Add GEMINI_API_KEY to the server or a personal key in Workspace settings.");
+  if (!apiKey?.trim()) {
+    if (!client) client = new GoogleGenAI({ apiKey: key });
+    return client;
+  }
+  let personal = personalClients.get(key);
+  if (!personal) {
+    personal = new GoogleGenAI({ apiKey: key });
+    personalClients.set(key, personal);
+    if (personalClients.size > 8) {
+      const oldest = personalClients.keys().next().value;
+      if (oldest !== undefined) personalClients.delete(oldest);
+    }
+  }
+  return personal;
 }
 
 export type GeminiUsage = { inputTokens: number; outputTokens: number };
@@ -60,9 +76,10 @@ async function withRetries<T>(work: () => Promise<T>): Promise<T> {
 
 export async function generateGeminiAnswer(
   prompt: string,
+  apiKey?: string | null,
 ): Promise<{ answer: string; usage: GeminiUsage; latencyMs: number }> {
   await assertChatBudget();
-  const ai = getClient();
+  const ai = getClient(apiKey);
   const startedAt = Date.now();
   await acquire();
   try {
@@ -91,9 +108,10 @@ export async function generateGeminiAnswer(
 export async function streamGeminiAnswer(
   prompt: string,
   onDelta: (text: string) => void,
+  apiKey?: string | null,
 ): Promise<{ usage: GeminiUsage; latencyMs: number }> {
   await assertChatBudget();
-  const ai = getClient();
+  const ai = getClient(apiKey);
   const startedAt = Date.now();
   await acquire();
   try {
@@ -140,9 +158,10 @@ export async function streamGeminiAnswer(
 export async function generateGeminiTurn(
   contents: Content[],
   tools: Tool[],
+  apiKey?: string | null,
 ): Promise<{ text: string | null; functionCalls: FunctionCall[]; parts: Part[]; usage: GeminiUsage; latencyMs: number }> {
   await assertChatBudget();
-  const ai = getClient();
+  const ai = getClient(apiKey);
   const startedAt = Date.now();
   await acquire();
   try {

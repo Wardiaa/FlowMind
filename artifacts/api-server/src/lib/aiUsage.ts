@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, gte, ne, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, ne, or, sql } from "drizzle-orm";
 import { aiUsageTable, db } from "@workspace/db";
 
 export type AiFeature = "agent_run" | "command" | "project_analysis" | "workflow_ai" | "embedding";
@@ -26,8 +26,9 @@ export function resolveChatDailyLimit(): number {
   return parsed;
 }
 
-// Counts recorded chat calls (embeddings use a separate model quota) over a
-// rolling 24h window, across all owners — the Gemini key is server-wide.
+// Counts recorded chat calls that used the server-level key (embeddings use a
+// separate model quota; personal workspace keys have their own Google quota) over
+// a rolling 24h window, across all owners.
 export async function assertChatBudget(): Promise<void> {
   const limit = resolveChatDailyLimit();
   if (limit === 0) return;
@@ -36,7 +37,13 @@ export async function assertChatBudget(): Promise<void> {
     const [row] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(aiUsageTable)
-      .where(and(ne(aiUsageTable.feature, "embedding"), gte(aiUsageTable.createdAt, since)));
+      .where(
+        and(
+          ne(aiUsageTable.feature, "embedding"),
+          or(isNull(aiUsageTable.keySource), eq(aiUsageTable.keySource, "server")),
+          gte(aiUsageTable.createdAt, since),
+        ),
+      );
     if (row && row.count >= limit) {
       throw new AiBudgetExceededError(
         `Daily AI request limit reached (${row.count}/${limit} requests in the last 24 hours). ` +
@@ -59,6 +66,7 @@ export async function recordAiUsage(
     outputTokens: number;
     latencyMs?: number | null;
     refId?: string | null;
+    keySource?: "server" | "workspace" | null;
   },
 ): Promise<void> {
   try {
@@ -71,6 +79,7 @@ export async function recordAiUsage(
       outputTokens: entry.outputTokens,
       latencyMs: entry.latencyMs ?? null,
       refId: entry.refId ?? null,
+      keySource: entry.keySource ?? null,
     });
   } catch (error) {
     console.error("Failed to record AI usage", error);

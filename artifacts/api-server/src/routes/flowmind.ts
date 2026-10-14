@@ -29,6 +29,8 @@ import {
   GetAiUsageQueryParams,
   GetAiUsageResponse,
   GetDashboardResponse,
+  DeleteWorkspaceAiKeyResponse,
+  GetWorkspaceAiKeyResponse,
   GetWorkspaceSettingsResponse,
   ListActivityResponse,
   ListAgentRunsParams,
@@ -52,6 +54,8 @@ import {
   UpdateWorkflowBody,
   UpdateWorkflowParams,
   UpdateWorkflowResponse,
+  UpdateWorkspaceAiKeyBody,
+  UpdateWorkspaceAiKeyResponse,
   UpdateWorkspaceSettingsBody,
   UpdateWorkspaceSettingsResponse,
 } from "@workspace/api-zod";
@@ -59,6 +63,8 @@ import type { ExecutionStep, WorkflowRecord } from "@workspace/db";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { CHAT_MODEL, generateGeminiAnswer, streamGeminiAnswer } from "../lib/gemini";
 import { recordAiUsage } from "../lib/aiUsage";
+import { deleteWorkspaceAiKey, getWorkspaceAiKeyState, resolveWorkspaceAiKey, saveWorkspaceAiKey } from "../lib/aiKey";
+import { encryptionConfigured } from "../lib/secrets";
 import { chunkText } from "../lib/chunking";
 import { nextRun } from "../lib/cron";
 import { backfillWorkspaceContent, ensureWorkspaceSeeded } from "../lib/flowmindSeed";
@@ -335,12 +341,14 @@ router.post("/agents/:id/run", async (req, res, next) => {
     const { userId, agent, prompt, settings } = prepared;
     const startedAt = Date.now();
     try {
+      const personalKey = await resolveWorkspaceAiKey(userId);
       const context = settings?.showSourceContext === false ? "" : await buildDocumentContext(userId, prompt);
-      const { answer, usage, latencyMs } = await generateGeminiAnswer(agentPrompt(agent, settings, context, prompt));
+      const { answer, usage, latencyMs } = await generateGeminiAnswer(agentPrompt(agent, settings, context, prompt), personalKey);
       const runId = await persistAgentRun({ userId, agentId: agent.id, prompt, answer, status: "completed", latencyMs });
       await recordAiUsage(userId, {
         feature: "agent_run", model: CHAT_MODEL,
         inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, latencyMs, refId: runId,
+        keySource: personalKey ? "workspace" : "server",
       });
       const event = await recordActivity(userId, {
         title: agent.name, action: "completed an AI run", detail: prompt.slice(0, 120),
@@ -383,15 +391,17 @@ router.post("/agents/:id/run/stream", async (req, res, next) => {
     let answer = "";
     const startedAt = Date.now();
     try {
+      const personalKey = await resolveWorkspaceAiKey(userId);
       const context = settings?.showSourceContext === false ? "" : await buildDocumentContext(userId, prompt);
       const { usage, latencyMs } = await streamGeminiAnswer(agentPrompt(agent, settings, context, prompt), (delta) => {
         answer += delta;
         send("delta", { text: delta });
-      });
+      }, personalKey);
       await db.update(agentRunsTable).set({ answer, status: "completed", latencyMs }).where(eq(agentRunsTable.id, runId));
       await recordAiUsage(userId, {
         feature: "agent_run", model: CHAT_MODEL,
         inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, latencyMs, refId: runId,
+        keySource: personalKey ? "workspace" : "server",
       });
       await recordActivity(userId, {
         title: agent.name, action: "completed an AI run", detail: prompt.slice(0, 120),
@@ -545,13 +555,16 @@ router.post("/projects/:id/analyze", async (req, res, next) => {
     const { id } = AnalyzeProjectParams.parse(req.params);
     const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.ownerId, userId)));
     if (!project) { res.status(404).json({ error: "Project not found." }); return; }
+    const personalKey = await resolveWorkspaceAiKey(userId);
     const { answer, usage, latencyMs } = await generateGeminiAnswer(
       `Act as a concise project operations analyst. Analyze this workspace project and give: current status, top risks, and 3 practical next steps. Do not invent activity not in the data.\n` +
       JSON.stringify({ name: project.name, progress: project.progress, taskCount: project.tasks, owner: project.owner, due: project.due, health: project.health }),
+      personalKey,
     );
     await recordAiUsage(userId, {
       feature: "project_analysis", model: CHAT_MODEL,
       inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, latencyMs, refId: project.id,
+      keySource: personalKey ? "workspace" : "server",
     });
     await recordActivity(userId, { title: "Project Agent", action: "analyzed project", detail: project.name, status: "Insight", color: project.color });
     res.json(AnalyzeProjectResponse.parse({ answer }));
@@ -757,6 +770,35 @@ router.patch("/settings", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.get("/ai-key", async (req, res, next) => {
+  try {
+    res.json(GetWorkspaceAiKeyResponse.parse(await getWorkspaceAiKeyState(owner(req))));
+  } catch (error) { next(error); }
+});
+
+router.put("/ai-key", async (req, res, next) => {
+  try {
+    const body = UpdateWorkspaceAiKeyBody.parse(req.body);
+    const key = body.key.trim();
+    if (!encryptionConfigured()) {
+      res.status(400).json({ error: "Personal AI keys are disabled: the server has no FLOWMIND_ENCRYPTION_KEY configured." });
+      return;
+    }
+    if (!/^[A-Za-z0-9_-]+$/.test(key)) {
+      res.status(400).json({ error: "That does not look like a Google AI API key." });
+      return;
+    }
+    res.json(UpdateWorkspaceAiKeyResponse.parse(await saveWorkspaceAiKey(owner(req), key)));
+  } catch (error) { next(error); }
+});
+
+router.delete("/ai-key", async (req, res, next) => {
+  try {
+    await deleteWorkspaceAiKey(owner(req));
+    res.json(DeleteWorkspaceAiKeyResponse.parse({ configured: false, hint: null }));
+  } catch (error) { next(error); }
+});
+
 router.post("/command", async (req, res, next) => {
   try {
     const userId = owner(req);
@@ -766,7 +808,8 @@ router.post("/command", async (req, res, next) => {
       res.status(400).json({ error: "Keep prompts under 10,000 characters." });
       return;
     }
-    const { answer, toolCalls } = await runCommandCenter(userId, prompt);
+    const personalKey = await resolveWorkspaceAiKey(userId);
+    const { answer, toolCalls } = await runCommandCenter(userId, prompt, personalKey);
     await recordActivity(userId, { title: "Command center", action: "answered a question", detail: prompt.slice(0, 120), status: "Insight", color: "#55b8a5" });
     res.json(RunCommandCenterResponse.parse({ answer, toolCalls }));
   } catch (error) { next(error); }

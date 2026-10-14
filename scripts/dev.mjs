@@ -30,6 +30,8 @@ const commonEnv = {
   FLOWMIND_DATA_DIR: path.resolve(root, process.env.FLOWMIND_DATA_DIR || "data"),
   PUBLIC_APP_URL: publicUrl,
   CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS || publicUrl,
+  // Dev-only default so personal AI keys work out of the box locally.
+  FLOWMIND_ENCRYPTION_KEY: process.env.FLOWMIND_ENCRYPTION_KEY || "flowmind-local-dev-encryption-key",
 };
 
 function pnpmCommand() {

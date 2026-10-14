@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { CHAT_MODEL, generateGeminiAnswer } from "./gemini";
 import { recordAiUsage } from "./aiUsage";
+import { resolveWorkspaceAiKey } from "./aiKey";
 import { createNotification } from "./notify";
 
 type TriggerSource = "manual" | "schedule" | "webhook";
@@ -79,6 +80,9 @@ async function runSteps(
   fromIndex: number,
   webhookInput?: unknown,
 ): Promise<void> {
+  // Resolve the workspace's personal key once per execution so resumed and
+  // scheduled runs pick up key changes.
+  const personalKey = await resolveWorkspaceAiKey(ownerId);
   for (let index = fromIndex; index < steps.length; index++) {
     const step = steps[index];
     step.startedAt = new Date().toISOString();
@@ -118,6 +122,7 @@ async function runSteps(
       const { answer, usage, latencyMs } = await generateGeminiAnswer(
         `You are a step inside the FlowMind workflow "${workflow.name}". Its configured trigger is: ${workflow.trigger}.\n` +
         `Perform only this step and return only its result text:\n${stepLabel(step.name)}${inputJson}`,
+        personalKey,
       );
       step.output = answer;
       await recordAiUsage(ownerId, {
@@ -127,6 +132,7 @@ async function runSteps(
         outputTokens: usage.outputTokens,
         latencyMs,
         refId: executionId,
+        keySource: personalKey ? "workspace" : "server",
       });
     } else {
       await new Promise((resolve) => setTimeout(resolve, 150));

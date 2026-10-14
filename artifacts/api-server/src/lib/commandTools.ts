@@ -116,7 +116,9 @@ async function executeTool(ownerId: string, name: string, args: Record<string, u
 export async function runCommandCenter(
   ownerId: string,
   prompt: string,
+  apiKey?: string | null,
 ): Promise<{ answer: string; toolCalls: CommandToolCall[] }> {
+  const keySource = apiKey ? "workspace" : "server";
   const system =
     "You are FlowMind's workspace command center. Answer questions about this workspace using the provided tools. " +
     "Call the tools you need, then answer concisely based on their results. If the tools do not answer something, say so. " +
@@ -125,13 +127,14 @@ export async function runCommandCenter(
   const toolCalls: CommandToolCall[] = [];
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-    const turn = await generateGeminiTurn(contents, TOOL_DECLARATIONS);
+    const turn = await generateGeminiTurn(contents, TOOL_DECLARATIONS, apiKey);
     await recordAiUsage(ownerId, {
       feature: "command",
       model: CHAT_MODEL,
       inputTokens: turn.usage.inputTokens,
       outputTokens: turn.usage.outputTokens,
       latencyMs: turn.latencyMs,
+      keySource,
     });
     if (turn.functionCalls.length === 0) {
       return { answer: turn.text ?? "", toolCalls };
@@ -160,13 +163,14 @@ export async function runCommandCenter(
   }
 
   // The model kept requesting tools; take away the tools and force a final answer.
-  const final = await generateGeminiTurn(contents, []);
+  const final = await generateGeminiTurn(contents, [], apiKey);
   await recordAiUsage(ownerId, {
     feature: "command",
     model: CHAT_MODEL,
     inputTokens: final.usage.inputTokens,
     outputTokens: final.usage.outputTokens,
     latencyMs: final.latencyMs,
+    keySource,
   });
   return { answer: final.text ?? "", toolCalls };
 }
