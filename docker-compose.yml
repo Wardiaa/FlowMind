@@ -1,13 +1,14 @@
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_DB: flowmind
       POSTGRES_USER: flowmind
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowmind_local_dev}
     ports:
-      - "127.0.0.1:5432:5432"
+      # 5432 is often taken by another local Postgres; FlowMind uses 5433 locally.
+      - "127.0.0.1:5433:5432"
     volumes:
       - flowmind-postgres:/var/lib/postgresql/data
     healthcheck:
