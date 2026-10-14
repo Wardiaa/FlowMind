@@ -17,6 +17,7 @@ import {
   FileText,
   FolderKanban,
   History,
+  KeyRound,
   LayoutDashboard,
   Link2,
   LoaderCircle,
@@ -48,12 +49,15 @@ import {
   getListWorkflowExecutionsQueryKey,
   getListAgentRunsQueryKey,
   getGetAiUsageQueryKey,
+  getGetWorkspaceAiKeyQueryKey,
   useAnalyzeProject,
   useCreateDocument,
   useCreateWorkflow,
   useDeleteDocument,
+  useDeleteWorkspaceAiKey,
   useDecideApproval,
   useGetAiUsage,
+  useGetWorkspaceAiKey,
   useGetWorkspaceSettings,
   useListApprovals,
   useListAgentRuns,
@@ -64,6 +68,7 @@ import {
   useSearchDocuments,
   useRunCommandCenter,
   useUpdateWorkflow,
+  useUpdateWorkspaceAiKey,
   useUpdateWorkspaceSettings,
   useCreateAgent,
   useGetDashboard,
@@ -954,10 +959,46 @@ function SettingsPage() {
   if (isError) return <ErrorState message={formatError(error)} retry={() => refetch()} />;
   return <div className="animate-page-in max-w-4xl"><PageHeading eyebrow="Workspace control" title="Settings" detail="Set the persisted defaults that shape how FlowMind works with your team." /><div className="space-y-5">
     <section className="panel"><div className="panel-header"><div><p className="eyebrow">Workspace</p><h2 className="panel-title">Identity & access</h2></div></div><div className="grid gap-4 p-5 md:grid-cols-2"><label className="field-label">Workspace name<input data-testid="input-workspace-name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="field-input" /></label><label className="field-label">Timezone<select data-testid="select-workspace-timezone" value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} className="field-input"><option value="Africa/Lagos">Africa/Lagos</option><option value="UTC">UTC</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="America/New_York">America/New_York</option><option value="Europe/London">Europe/London</option></select></label></div></section>
+    <AiKeySection />
     <section className="panel"><div className="panel-header"><div><p className="eyebrow">AI defaults</p><h2 className="panel-title">How teammates behave</h2></div><Bot size={18} className="text-teal-600" /></div><div className="divide-y divide-slate-100">{toggles.map((toggle) => <div key={toggle.key} className="flex items-center gap-4 px-5 py-4"><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800">{toggle.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{toggle.detail}</p></div><button data-testid={`toggle-${toggle.key}`} aria-pressed={form[toggle.key]} onClick={() => setForm({ ...form, [toggle.key]: !form[toggle.key] })} className={cn('toggle-track', form[toggle.key] && 'toggle-on')}><span /></button></div>)}</div></section>
     {update.isError && <p role="alert" className="text-sm text-rose-700">{formatError(update.error)}</p>}
     <div className="flex items-center justify-end gap-3"><span className={cn('text-xs text-teal-700 transition-opacity', saved ? 'opacity-100' : 'opacity-0')}>Settings saved</span><button data-testid="button-save-settings" onClick={save} disabled={update.isPending || !form.name.trim()} className="primary-button disabled:opacity-50">{update.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Check size={15} />}Save changes</button></div>
   </div></div>;
+}
+
+function AiKeySection() {
+  const queryClient = useQueryClient();
+  const { data: keyState, isLoading } = useGetWorkspaceAiKey({ query: { queryKey: getGetWorkspaceAiKeyQueryKey() } });
+  const saveKey = useUpdateWorkspaceAiKey();
+  const removeKey = useDeleteWorkspaceAiKey();
+  const [keyInput, setKeyInput] = useState('');
+  const [editing, setEditing] = useState(false);
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: getGetWorkspaceAiKeyQueryKey() });
+    setKeyInput('');
+    setEditing(false);
+  };
+  const save = () => saveKey.mutate({ data: { key: keyInput.trim() } }, { onSuccess: refresh });
+  const remove = () => removeKey.mutate(undefined, { onSuccess: refresh });
+  const configured = Boolean(keyState?.configured);
+  return <section className="panel"><div className="panel-header"><div><p className="eyebrow">AI key</p><h2 className="panel-title">Personal Gemini key</h2></div><KeyRound size={18} className="text-teal-600" /></div>
+    <div className="space-y-3 p-5">
+      {isLoading ? <Skeleton className="h-10" /> : configured
+        ? <div className="flex flex-wrap items-center gap-3"><StatusPill status="Active" /> <span className="text-sm text-slate-700">Your own key is active (<code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">{keyState?.hint}</code>)</span></div>
+        : <div className="flex flex-wrap items-center gap-3"><StatusPill status="Shared" /> <span className="text-sm text-slate-600">AI features use this server's shared Gemini key and its quota.</span></div>}
+      <p className="text-xs leading-5 text-slate-500">Add your own Google AI Studio key to run AI features on your quota instead of the shared one. It is stored encrypted on the server and never shown in full again. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-teal-700 underline decoration-dotted">Get a free key</a>.</p>
+      {(editing || !configured) && <div className="flex flex-wrap items-center gap-2">
+        <input data-testid="input-ai-key" type="password" autoComplete="off" placeholder="AIza…" value={keyInput} onChange={(event) => setKeyInput(event.target.value)} className="field-input max-w-md font-mono" />
+        <button data-testid="button-save-ai-key" onClick={save} disabled={saveKey.isPending || keyInput.trim().length < 20} className="primary-button disabled:opacity-50">{saveKey.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Check size={15} />}Save key</button>
+        {configured && <button onClick={() => { setEditing(false); setKeyInput(''); }} className="ghost-button">Cancel</button>}
+      </div>}
+      {configured && !editing && <div className="flex gap-2">
+        <button data-testid="button-replace-ai-key" onClick={() => setEditing(true)} className="ghost-button">Replace key</button>
+        <button data-testid="button-remove-ai-key" onClick={remove} disabled={removeKey.isPending} className="ghost-button text-rose-700">{removeKey.isPending ? <LoaderCircle className="animate-spin" size={15} /> : null}Remove</button>
+      </div>}
+      {(saveKey.isError || removeKey.isError) && <p role="alert" className="text-sm text-rose-700">{formatError(saveKey.isError ? saveKey.error : removeKey.error)}</p>}
+    </div>
+  </section>;
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
