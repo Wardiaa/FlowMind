@@ -587,6 +587,42 @@ export const UpdateWorkspaceSettingsResponse = zod.object({
 
 
 /**
+ * @summary Get personal Gemini API key status (masked)
+ */
+export const GetWorkspaceAiKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "hint": zod.string().nullable().describe('Masked key preview (e.g. AIzaSy…9f2); never the full key')
+})
+
+
+/**
+ * @summary Save or replace the personal Gemini API key
+ */
+export const updateWorkspaceAiKeyBodyKeyMin = 20;
+export const updateWorkspaceAiKeyBodyKeyMax = 200;
+
+
+
+export const UpdateWorkspaceAiKeyBody = zod.object({
+  "key": zod.string().min(updateWorkspaceAiKeyBodyKeyMin).max(updateWorkspaceAiKeyBodyKeyMax)
+})
+
+export const UpdateWorkspaceAiKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "hint": zod.string().nullable().describe('Masked key preview (e.g. AIzaSy…9f2); never the full key')
+})
+
+
+/**
+ * @summary Remove the personal Gemini API key
+ */
+export const DeleteWorkspaceAiKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "hint": zod.string().nullable().describe('Masked key preview (e.g. AIzaSy…9f2); never the full key')
+})
+
+
+/**
  * @summary Ask the AI command center a question
  */
 

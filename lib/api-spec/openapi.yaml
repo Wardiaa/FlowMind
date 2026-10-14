@@ -411,6 +411,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceSettings"
+  /ai-key:
+    get:
+      operationId: getWorkspaceAiKey
+      tags: [settings]
+      summary: Get personal Gemini API key status (masked)
+      responses:
+        "200":
+          description: Personal key status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAiKeyStatus"
+    put:
+      operationId: updateWorkspaceAiKey
+      tags: [settings]
+      summary: Save or replace the personal Gemini API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceAiKeyInput"
+      responses:
+        "200":
+          description: Personal key status after save
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAiKeyStatus"
+    delete:
+      operationId: deleteWorkspaceAiKey
+      tags: [settings]
+      summary: Remove the personal Gemini API key
+      responses:
+        "200":
+          description: Personal key status after removal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAiKeyStatus"
   /command:
     post:
       operationId: runCommandCenter
@@ -890,6 +930,17 @@ components:
         pauseBeforeExternalActions: { type: boolean }
         showSourceContext: { type: boolean }
         dailyDigest: { type: boolean }
+    WorkspaceAiKeyStatus:
+      type: object
+      required: [configured, hint]
+      properties:
+        configured: { type: boolean }
+        hint: { type: ["string", "null"], description: Masked key preview (e.g. AIzaSy…9f2); never the full key }
+    WorkspaceAiKeyInput:
+      type: object
+      required: [key]
+      properties:
+        key: { type: string, minLength: 20, maxLength: 200 }
     UploadUrlRequest:
       type: object
       required: [name, size, contentType]

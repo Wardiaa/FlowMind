@@ -513,6 +513,23 @@ export interface WorkspaceSettingsUpdate {
   dailyDigest?: boolean;
 }
 
+export interface WorkspaceAiKeyStatus {
+  configured: boolean;
+  /**
+     * Masked key preview (e.g. AIzaSy…9f2); never the full key
+     * @nullable
+     */
+  hint: string | null;
+}
+
+export interface WorkspaceAiKeyInput {
+  /**
+     * @minLength 20
+     * @maxLength 200
+     */
+  key: string;
+}
+
 export interface UploadUrlRequest {
   /** @minLength 1 */
   name: string;

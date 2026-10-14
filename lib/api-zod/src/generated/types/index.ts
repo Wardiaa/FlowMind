@@ -69,5 +69,7 @@ export * from './workflowTriggerType';
 export * from './workflowUpdate';
 export * from './workflowUpdateStatus';
 export * from './workflowUpdateTriggerType';
+export * from './workspaceAiKeyInput';
+export * from './workspaceAiKeyStatus';
 export * from './workspaceSettings';
 export * from './workspaceSettingsUpdate';
