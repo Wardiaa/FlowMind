@@ -26,6 +26,7 @@ import type {
   AgentRunInput,
   AgentRunList,
   AgentRunResponse,
+  AiQuota,
   AiUsageReport,
   AnalysisResponse,
   Approval,
@@ -2631,6 +2632,83 @@ export const useDeleteWorkspaceAiKey = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getDeleteWorkspaceAiKeyMutationOptions(options));
     }
+
+export const getGetAiQuotaUrl = () => {
+
+
+
+
+  return `/api/ai-quota`
+}
+
+/**
+ * @summary Get the shared AI request quota status for the last 24 hours
+ */
+export const getAiQuota = async ( options?: Parameters<typeof customFetch>[1]): Promise<AiQuota> => {
+
+  return customFetch<AiQuota>(getGetAiQuotaUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiQuotaQueryKey = () => {
+    return [
+    `/api/ai-quota`
+    ] as const;
+    }
+
+
+export const getGetAiQuotaQueryOptions = <TData = Awaited<ReturnType<typeof getAiQuota>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiQuota>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiQuotaQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiQuota>>> = ({ signal }) => getAiQuota({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiQuota>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiQuotaQueryResult = NonNullable<Awaited<ReturnType<typeof getAiQuota>>>
+export type GetAiQuotaQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the shared AI request quota status for the last 24 hours
+ */
+
+export function useGetAiQuota<TData = Awaited<ReturnType<typeof getAiQuota>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiQuota>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiQuotaQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getSeedSampleDataUrl = () => {
 

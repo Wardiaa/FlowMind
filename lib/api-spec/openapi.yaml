@@ -480,6 +480,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceAiKeyStatus"
+  /ai-quota:
+    get:
+      operationId: getAiQuota
+      tags: [settings]
+      summary: Get the shared AI request quota status for the last 24 hours
+      responses:
+        "200":
+          description: Shared quota usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiQuota"
   /sample-data:
     post:
       operationId: seedSampleData
@@ -990,6 +1002,15 @@ components:
       required: [seeded]
       properties:
         seeded: { type: boolean, description: True when sample content was inserted, false when the workspace already had content }
+    AiQuota:
+      type: object
+      required: [used, limit, remaining, exhausted, personalKeyConfigured]
+      properties:
+        used: { type: integer }
+        limit: { type: integer }
+        remaining: { type: integer }
+        exhausted: { type: boolean }
+        personalKeyConfigured: { type: boolean, description: True when the workspace has its own Gemini API key and is not affected by the shared quota }
     UploadUrlRequest:
       type: object
       required: [name, size, contentType]

@@ -29,6 +29,7 @@ import {
   DeleteDocumentParams,
   DeleteProjectParams,
   DeleteWorkflowParams,
+  GetAiQuotaResponse,
   GetAiUsageQueryParams,
   GetAiUsageResponse,
   GetDashboardResponse,
@@ -66,7 +67,7 @@ import {
 import type { ExecutionStep, WorkflowRecord } from "@workspace/db";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { CHAT_MODEL, generateGeminiAnswer, streamGeminiAnswer } from "../lib/gemini";
-import { recordAiUsage } from "../lib/aiUsage";
+import { getChatBudgetUsage, recordAiUsage, resolveChatDailyLimit } from "../lib/aiUsage";
 import { deleteWorkspaceAiKey, getWorkspaceAiKeyState, resolveWorkspaceAiKey, saveWorkspaceAiKey } from "../lib/aiKey";
 import { encryptionConfigured } from "../lib/secrets";
 import { chunkText } from "../lib/chunking";
@@ -852,6 +853,27 @@ router.delete("/ai-key", async (req, res, next) => {
   try {
     await deleteWorkspaceAiKey(owner(req));
     res.json(DeleteWorkspaceAiKeyResponse.parse({ configured: false, hint: null }));
+  } catch (error) { next(error); }
+});
+
+router.get("/ai-quota", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const limit = resolveChatDailyLimit();
+    let used = 0;
+    try {
+      used = await getChatBudgetUsage();
+    } catch (error) {
+      console.error("AI quota read failed", error);
+    }
+    const keyState = await getWorkspaceAiKeyState(userId);
+    res.json(GetAiQuotaResponse.parse({
+      used,
+      limit,
+      remaining: Math.max(0, limit - used),
+      exhausted: limit > 0 && used >= limit,
+      personalKeyConfigured: keyState.configured,
+    }));
   } catch (error) { next(error); }
 });
 

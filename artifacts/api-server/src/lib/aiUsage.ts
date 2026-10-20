@@ -29,25 +29,30 @@ export function resolveChatDailyLimit(): number {
 // Counts recorded chat calls that used the server-level key (embeddings use a
 // separate model quota; personal workspace keys have their own Google quota) over
 // a rolling 24h window, across all owners.
+export async function getChatBudgetUsage(): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(aiUsageTable)
+    .where(
+      and(
+        ne(aiUsageTable.feature, "embedding"),
+        or(isNull(aiUsageTable.keySource), eq(aiUsageTable.keySource, "server")),
+        gte(aiUsageTable.createdAt, since),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
 export async function assertChatBudget(): Promise<void> {
   const limit = resolveChatDailyLimit();
   if (limit === 0) return;
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [row] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(aiUsageTable)
-      .where(
-        and(
-          ne(aiUsageTable.feature, "embedding"),
-          or(isNull(aiUsageTable.keySource), eq(aiUsageTable.keySource, "server")),
-          gte(aiUsageTable.createdAt, since),
-        ),
-      );
-    if (row && row.count >= limit) {
+    const count = await getChatBudgetUsage();
+    if (count >= limit) {
       throw new AiBudgetExceededError(
-        `Daily AI request limit reached (${row.count}/${limit} requests in the last 24 hours). ` +
-          "The window resets automatically, or raise GEMINI_DAILY_REQUEST_LIMIT.",
+        `Daily AI request limit reached (${count}/${limit} requests in the last 24 hours). ` +
+          "The window resets automatically, add a personal Gemini API key in Settings, or raise GEMINI_DAILY_REQUEST_LIMIT.",
       );
     }
   } catch (error) {

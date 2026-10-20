@@ -78,7 +78,8 @@ export async function generateGeminiAnswer(
   prompt: string,
   apiKey?: string | null,
 ): Promise<{ answer: string; usage: GeminiUsage; latencyMs: number }> {
-  await assertChatBudget();
+  // Personal workspace keys have their own Google quota and bypass the shared guard.
+  if (!apiKey) await assertChatBudget();
   const ai = getClient(apiKey);
   const startedAt = Date.now();
   await acquire();
@@ -110,7 +111,7 @@ export async function streamGeminiAnswer(
   onDelta: (text: string) => void,
   apiKey?: string | null,
 ): Promise<{ usage: GeminiUsage; latencyMs: number }> {
-  await assertChatBudget();
+  if (!apiKey) await assertChatBudget();
   const ai = getClient(apiKey);
   const startedAt = Date.now();
   await acquire();
@@ -160,7 +161,7 @@ export async function generateGeminiTurn(
   tools: Tool[],
   apiKey?: string | null,
 ): Promise<{ text: string | null; functionCalls: FunctionCall[]; parts: Part[]; usage: GeminiUsage; latencyMs: number }> {
-  await assertChatBudget();
+  if (!apiKey) await assertChatBudget();
   const ai = getClient(apiKey);
   const startedAt = Date.now();
   await acquire();

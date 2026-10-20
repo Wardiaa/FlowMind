@@ -656,6 +656,18 @@ export const DeleteWorkspaceAiKeyResponse = zod.object({
 
 
 /**
+ * @summary Get the shared AI request quota status for the last 24 hours
+ */
+export const GetAiQuotaResponse = zod.object({
+  "used": zod.number().int(),
+  "limit": zod.number().int(),
+  "remaining": zod.number().int(),
+  "exhausted": zod.boolean(),
+  "personalKeyConfigured": zod.boolean().describe('True when the workspace has its own Gemini API key and is not affected by the shared quota')
+})
+
+
+/**
  * Fills an empty workspace with example content so new users can explore. Does nothing if any agent already exists.
  * @summary Load the sample workspace content (agents, workflows, projects, documents)
  */

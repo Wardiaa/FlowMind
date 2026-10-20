@@ -49,6 +49,7 @@ import {
   getListNotificationsQueryKey,
   getListWorkflowExecutionsQueryKey,
   getListAgentRunsQueryKey,
+  getGetAiQuotaQueryKey,
   getGetAiUsageQueryKey,
   getGetWorkspaceAiKeyQueryKey,
   useAnalyzeProject,
@@ -76,6 +77,7 @@ import {
   useDeleteAgent,
   useDeleteProject,
   useDeleteWorkflow,
+  useGetAiQuota,
   useGetDashboard,
   useHealthCheck,
   useListActivity,
@@ -359,6 +361,7 @@ function DashboardPage() {
   };
   return <div className="animate-page-in">
     <PageHeading eyebrow={new Date().toLocaleDateString(undefined, { timeZone: workspaceSettings?.timezone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} title={`Good day${user?.firstName ? `, ${user.firstName}` : ''}.`} detail="A clear view of what your AI teammates handled and what needs your judgment today."><button data-testid="button-command-center" onClick={() => setShowCommand(true)} className="primary-button"><Sparkles size={15} />Ask command center</button></PageHeading>
+    <AiQuotaBanner />
     {!activities.length && !projects.length && !approval?.pending && <div className="mb-5"><GettingStartedCard onAskCommand={() => setShowCommand(true)} /></div>}
     <MetricStrip metrics={metrics} />
     <div className="mt-7 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
@@ -395,7 +398,7 @@ function CommandCenterModal({ onClose }: { onClose: () => void }) {
     <p className="mb-4 text-sm leading-6 text-slate-600">Ask about your saved agents, workflows, projects, or approval queue. The answer uses this workspace’s data.</p>
     <label className="field-label">Question<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(); }} className="field-input min-h-24 resize-y" placeholder="What should I review today?" /></label>
     <div className="mt-4 flex justify-end"><button data-testid="button-ask-command" onClick={submit} disabled={!prompt.trim() || command.isPending} className="primary-button disabled:opacity-50">{command.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Send size={15} />}Ask Gemini</button></div>
-    {command.isError && <p role="alert" className="mt-3 text-sm text-rose-700">{formatError(command.error)}</p>}
+    {command.isError && <><p role="alert" className="mt-3 text-sm text-rose-700">{formatError(command.error)}</p>{isAiLimitError(command.error) && <AiLimitNudge compact />}</>}
     {answer && <div className="mt-5 whitespace-pre-wrap rounded-lg border border-teal-200 bg-teal-50/70 p-4 text-sm leading-6 text-slate-700">{answer}</div>}
     {answer && toolCalls.length > 0 && <div className="mt-4">
       <p className="eyebrow">Sources used</p>
@@ -551,7 +554,7 @@ function AgentDetailPage() {
             {sent.map((item) => <div key={item.key} className="space-y-2"><div className="ml-auto max-w-[88%] rounded-lg bg-slate-900 px-3 py-2 text-sm text-white">{item.prompt}</div><div data-testid={`agent-answer-${item.key}`} className="max-w-[92%] whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-sm leading-6 text-slate-700 shadow-sm">{item.answer || (streaming ? <span className="inline-flex items-center gap-2 text-slate-400"><LoaderCircle size={14} className="animate-spin" />Thinking…</span> : 'Run failed. Try again.')}</div></div>)}
           </div>
           <div className="mt-3 flex gap-2"><input data-testid="input-agent-test" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submit(); }} placeholder="Ask a question or describe a task…" className="field-input" /><button data-testid="button-send-agent-test" onClick={() => submit()} disabled={!input.trim() || streaming} className="primary-button px-3 disabled:opacity-50">{streaming ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}</button></div>
-          {runError && <p role="alert" className="mt-2 text-xs text-rose-700">{runError}</p>}
+          {runError && <><p role="alert" className="mt-2 text-xs text-rose-700">{runError}</p>{isAiLimitError(runError) && <AiLimitNudge compact />}</>}
         </div>
       </section>
       <aside className="space-y-5"><div className="panel p-6"><p className="eyebrow">Operating record</p><div className="mt-5 grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Total runs</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{agent.runs.toLocaleString()}</p></div><div><p className="text-xs text-slate-500">Tool labels</p><p className="mt-1 font-display text-2xl font-semibold text-slate-900">{agent.tools.length}</p></div></div></div><div className="panel p-6"><p className="eyebrow">Run history</p><p className="mt-1 text-xs leading-5 text-slate-500">The last 50 runs of this agent, newest first.</p><div className="mt-4 max-h-96 space-y-2 overflow-y-auto">{!runHistory.length && <p className="text-xs text-slate-400">No saved runs yet — start with the test bench.</p>}{runHistory.map((run) => <details key={run.id} data-testid={`agent-run-${run.id}`} className="rounded-lg border border-slate-100 px-3 py-2.5 open:bg-slate-50/70">
@@ -736,7 +739,7 @@ function WorkflowDetailPage() {
           <div className="mt-7 flex flex-wrap gap-2"><button data-testid="button-run-workflow" onClick={run} disabled={runWorkflow.isPending || workflow.status === 'Paused'} className="primary-button disabled:opacity-50">{runWorkflow.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}Run test</button><button data-testid="button-workflow-settings" onClick={() => setConfiguring(true)} className="secondary-button"><Settings2 size={15} />Configure</button><button data-testid="button-delete-workflow-detail" onClick={() => setConfirming(true)} className="secondary-button text-rose-600 hover:border-rose-300 hover:bg-rose-50"><Trash2 size={14} />Delete</button></div>
           <p className="mt-3 text-xs text-slate-500">Runs execute in the background. Steps prefixed “ai:” call Gemini; “approval:” steps pause the run until you decide.</p>
           {liveExecution && <div data-testid="workflow-live-run" className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800"><span className="inline-flex items-center gap-2"><LoaderCircle size={13} className="animate-spin" />{liveExecution.status === 'Waiting' ? 'Waiting for your approval on the approvals page…' : 'Run in progress…'}</span></div>}
-          {runWorkflow.isError && <p role="alert" className="mt-3 text-xs text-rose-600">{formatError(runWorkflow.error)}</p>}
+          {runWorkflow.isError && <><p role="alert" className="mt-3 text-xs text-rose-600">{formatError(runWorkflow.error)}</p>{isAiLimitError(runWorkflow.error) && <AiLimitNudge compact />}</>}
         </div>
         <div className="p-6 md:p-8"><p className="eyebrow">Configured steps</p><div className="mt-5 space-y-0">{workflow.steps.map((step, index) => <div key={`${index}-${step}`} className="relative flex gap-4 pb-6 last:pb-0"><div className="relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-teal-50 font-mono text-xs font-semibold text-teal-700">{index + 1}</div>{index < workflow.steps.length - 1 && <span className="absolute left-[13px] top-7 h-[calc(100%-10px)] w-px bg-teal-100" />}<div><p className="text-sm font-semibold text-slate-800">{step}</p><p className="mt-1 text-xs text-slate-500">{step.startsWith('ai:') ? 'Calls Gemini when the run reaches this step.' : step.startsWith('approval:') || step.toLowerCase().includes('approval') ? 'Pauses the run for a human decision.' : 'Recorded in the workflow run history.'}</p></div></div>)}</div></div>
       </section>
@@ -825,7 +828,7 @@ function ProjectsPage() {
   return <div className="animate-page-in">
     <PageHeading eyebrow="Work orchestration" title="Projects" detail="See where work is moving, where your AI teammates are helping, and where a person may need to unblock the path."><button data-testid="button-analyze-projects" onClick={() => setSelected(projects[0] || null)} disabled={!projects.length} className="primary-button disabled:opacity-50"><Sparkles size={15} />Analyze a project</button></PageHeading>
     {isLoading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-56" />)}</div> : isError ? <ErrorState message={formatError(error)} retry={() => refetch()} /> : !projects.length ? <EmptyState icon={FolderKanban} title="No projects in view" detail="Projects connected to your workspace will show up here." /> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => { setSelected(project); analyzeProject.reset(); }} />)}</div>}
-    {selected && <Modal title={`Project analysis · ${selected.name}`} onClose={() => setSelected(null)}><div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700"><p><strong>Status:</strong> {selected.health} · {selected.progress}% complete</p><p><strong>Tasks:</strong> {selected.tasks} · <strong>Due:</strong> {selected.due}</p></div><div className="mt-4 flex justify-end"><button onClick={runAnalysis} disabled={analyzeProject.isPending} className="primary-button disabled:opacity-50">{analyzeProject.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}Analyze with Gemini</button></div>{analyzeProject.isError && <p role="alert" className="mt-3 text-sm text-rose-700">{formatError(analyzeProject.error)}</p>}{analyzeProject.data?.answer && <div className="mt-4 whitespace-pre-wrap rounded-lg border border-teal-200 bg-teal-50/70 p-4 text-sm leading-6 text-slate-700">{analyzeProject.data.answer}</div>}<div className="mt-5 flex justify-end"><button data-testid="button-close-analysis" onClick={() => setSelected(null)} className="secondary-button">Close</button></div></Modal>}
+    {selected && <Modal title={`Project analysis · ${selected.name}`} onClose={() => setSelected(null)}><div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700"><p><strong>Status:</strong> {selected.health} · {selected.progress}% complete</p><p><strong>Tasks:</strong> {selected.tasks} · <strong>Due:</strong> {selected.due}</p></div><div className="mt-4 flex justify-end"><button onClick={runAnalysis} disabled={analyzeProject.isPending} className="primary-button disabled:opacity-50">{analyzeProject.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}Analyze with Gemini</button></div>{analyzeProject.isError && <><p role="alert" className="mt-3 text-sm text-rose-700">{formatError(analyzeProject.error)}</p>{isAiLimitError(analyzeProject.error) && <AiLimitNudge compact />}</>}{analyzeProject.data?.answer && <div className="mt-4 whitespace-pre-wrap rounded-lg border border-teal-200 bg-teal-50/70 p-4 text-sm leading-6 text-slate-700">{analyzeProject.data.answer}</div>}<div className="mt-5 flex justify-end"><button data-testid="button-close-analysis" onClick={() => setSelected(null)} className="secondary-button">Close</button></div></Modal>}
   </div>;
 }
 
@@ -1071,6 +1074,7 @@ function SettingsPage() {
 function AiKeySection() {
   const queryClient = useQueryClient();
   const { data: keyState, isLoading } = useGetWorkspaceAiKey({ query: { queryKey: getGetWorkspaceAiKeyQueryKey() } });
+  const { data: quota } = useGetAiQuota({ query: { queryKey: getGetAiQuotaQueryKey(), refetchInterval: 60_000 } });
   const saveKey = useUpdateWorkspaceAiKey();
   const removeKey = useDeleteWorkspaceAiKey();
   const [keyInput, setKeyInput] = useState('');
@@ -1087,7 +1091,7 @@ function AiKeySection() {
     <div className="space-y-3 p-5">
       {isLoading ? <Skeleton className="h-10" /> : configured
         ? <div className="flex flex-wrap items-center gap-3"><StatusPill status="Active" /> <span className="text-sm text-slate-700">Your own key is active (<code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">{keyState?.hint}</code>)</span></div>
-        : <div className="flex flex-wrap items-center gap-3"><StatusPill status="Shared" /> <span className="text-sm text-slate-600">AI features use this server's shared Gemini key and its quota.</span></div>}
+        : <div className="flex flex-wrap items-center gap-3"><StatusPill status="Shared" /> <span className="text-sm text-slate-600">AI features use this server's shared Gemini key{quota ? ` — ${quota.used}/${quota.limit} shared requests used in the last 24 hours` : ' and its quota'}.</span>{quota?.exhausted && <StatusPill status="Blocked" />}</div>}
       <p className="text-xs leading-5 text-slate-500">Add your own Google AI Studio key to run AI features on your quota instead of the shared one. It is stored encrypted on the server and never shown in full again. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-teal-700 underline decoration-dotted">Get a free key</a>.</p>
       {(editing || !configured) && <div className="flex flex-wrap items-center gap-2">
         <input data-testid="input-ai-key" type="password" autoComplete="off" placeholder="AIza…" value={keyInput} onChange={(event) => setKeyInput(event.target.value)} className="field-input max-w-md font-mono" />
@@ -1249,6 +1253,35 @@ function ConfirmDialog({ testId, title, body, confirmLabel, pending, onConfirm, 
 
 function CardDeleteButton({ testId, onOpen, className }: { testId: string; onOpen: () => void; className: string }) {
   return <button data-testid={testId} title="Delete" aria-label="Delete" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onOpen(); }} className={cn('absolute z-10 flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-slate-400 opacity-0 shadow-sm transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:opacity-100 focus-visible:opacity-100 group-hover:opacity-100', className)}><Trash2 size={14} /></button>;
+}
+
+function isAiLimitError(error: unknown): boolean {
+  const message = typeof error === 'string' ? error : formatError(error);
+  return message.includes('Daily AI request limit');
+}
+
+function AiLimitNudge({ compact }: { compact?: boolean }) {
+  return <div data-testid="ai-limit-nudge" className={cn('mt-3 rounded-lg border border-amber-200 bg-amber-50', compact ? 'p-3' : 'p-4')}>
+    <div className="flex items-start gap-2.5"><KeyRound size={16} className="mt-0.5 shrink-0 text-amber-700" />
+      <div className="text-xs leading-5 text-amber-900">
+        <p className="font-semibold">You have used the workspace's shared daily AI quota.</p>
+        <p className="mt-1 text-amber-900/80">Add a personal Gemini API key in Settings to keep going right away — it uses your own Google quota instead of the shared pool. Otherwise the window resets automatically every 24 hours.</p>
+        <Link href="/settings" data-testid="link-nudge-settings" className="mt-2 inline-flex items-center gap-1.5 font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:decoration-amber-700"><KeyRound size={12} />Add a personal AI key</Link>
+      </div>
+    </div>
+  </div>;
+}
+
+function AiQuotaBanner() {
+  const { data: quota } = useGetAiQuota({ query: { queryKey: getGetAiQuotaQueryKey(), refetchInterval: 60_000 } });
+  if (!quota?.exhausted || quota.personalKeyConfigured) return null;
+  return <div data-testid="ai-quota-banner" className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+    <div className="flex flex-wrap items-center gap-3">
+      <KeyRound size={16} className="shrink-0 text-amber-700" />
+      <p className="min-w-48 flex-1 text-xs leading-5 text-amber-900"><strong>Daily AI limit reached ({quota.used}/{quota.limit} shared requests).</strong> Agent runs, the command center, and AI workflow steps pause until the 24-hour window resets — unless you add a personal Gemini key.</p>
+      <Link href="/settings" data-testid="link-quota-banner-settings" className="secondary-button border-amber-300 text-amber-900 hover:border-amber-400"><KeyRound size={13} />Add your key</Link>
+    </div>
+  </div>;
 }
 
 function Router() {

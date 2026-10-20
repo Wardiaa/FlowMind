@@ -15,6 +15,7 @@ export * from './agentRunList';
 export * from './agentRunResponse';
 export * from './agentRunStatus';
 export * from './agentStatus';
+export * from './aiQuota';
 export * from './aiUsageReport';
 export * from './aiUsageReportByFeatureItem';
 export * from './aiUsageReportDailyItem';

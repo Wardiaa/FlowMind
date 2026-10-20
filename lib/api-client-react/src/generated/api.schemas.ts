@@ -538,6 +538,15 @@ export interface SampleDataResponse {
   seeded: boolean;
 }
 
+export interface AiQuota {
+  used: number;
+  limit: number;
+  remaining: number;
+  exhausted: boolean;
+  /** True when the workspace has its own Gemini API key and is not affected by the shared quota */
+  personalKeyConfigured: boolean;
+}
+
 export interface UploadUrlRequest {
   /** @minLength 1 */
   name: string;
