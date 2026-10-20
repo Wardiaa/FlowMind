@@ -12,4 +12,6 @@ export interface WorkspaceSettings {
   pauseBeforeExternalActions: boolean;
   showSourceContext: boolean;
   dailyDigest: boolean;
+  /** Whether the welcome tour was finished or skipped */
+  onboardingCompleted: boolean;
 }

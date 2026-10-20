@@ -141,6 +141,9 @@ export const workspaceSettingsTable = pgTable("flowmind_workspace_settings", {
   pauseBeforeExternalActions: boolean("pause_before_external_actions").notNull().default(true),
   showSourceContext: boolean("show_source_context").notNull().default(true),
   dailyDigest: boolean("daily_digest").notNull().default(false),
+  // New workspaces are created with false in ensureWorkspaceSettings; the
+  // default true keeps the tour from popping up for pre-existing accounts.
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(true),
   geminiApiKeyEnc: text("gemini_api_key_enc"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -53,13 +53,20 @@ Success metrics: 400 demo requests, 12 percent landing-page conversion, CAC unde
 Risks: Webinar speaker availability in August, and possible creative fatigue after week 4 — plan a mid-flight refresh in week 5.`,
 };
 
-export async function ensureWorkspaceSeeded(ownerId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [created] = await tx.insert(workspaceSettingsTable)
-      .values({ ownerId })
-      .onConflictDoNothing()
-      .returning({ ownerId: workspaceSettingsTable.ownerId });
-    if (!created) return;
+export async function ensureWorkspaceSettings(ownerId: string): Promise<void> {
+  await db
+    .insert(workspaceSettingsTable)
+    .values({ ownerId, onboardingCompleted: false })
+    .onConflictDoNothing();
+}
+
+export async function seedWorkspaceDemoContent(ownerId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [agentCount] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(agentsTable)
+      .where(eq(agentsTable.ownerId, ownerId));
+    if ((agentCount?.count ?? 0) > 0) return false;
 
     const id = (key: string) => `${ownerId}:${key}`;
     await tx.insert(agentsTable).values([
@@ -130,6 +137,8 @@ export async function ensureWorkspaceSeeded(ownerId: string): Promise<void> {
       status: "Pending",
       createdAt: new Date(now - 2 * 60_000),
     });
+
+    return true;
   });
 }
 

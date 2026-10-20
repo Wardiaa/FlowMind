@@ -14,4 +14,5 @@ export interface WorkspaceSettingsUpdate {
   pauseBeforeExternalActions?: boolean;
   showSourceContext?: boolean;
   dailyDigest?: boolean;
+  onboardingCompleted?: boolean;
 }

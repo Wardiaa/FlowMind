@@ -558,7 +558,8 @@ export const GetWorkspaceSettingsResponse = zod.object({
   "timezone": zod.string(),
   "pauseBeforeExternalActions": zod.boolean(),
   "showSourceContext": zod.boolean(),
-  "dailyDigest": zod.boolean()
+  "dailyDigest": zod.boolean(),
+  "onboardingCompleted": zod.boolean().describe('Whether the welcome tour was finished or skipped')
 })
 
 
@@ -574,7 +575,8 @@ export const UpdateWorkspaceSettingsBody = zod.object({
   "timezone": zod.string().min(1).optional(),
   "pauseBeforeExternalActions": zod.boolean().optional(),
   "showSourceContext": zod.boolean().optional(),
-  "dailyDigest": zod.boolean().optional()
+  "dailyDigest": zod.boolean().optional(),
+  "onboardingCompleted": zod.boolean().optional()
 })
 
 export const UpdateWorkspaceSettingsResponse = zod.object({
@@ -582,7 +584,8 @@ export const UpdateWorkspaceSettingsResponse = zod.object({
   "timezone": zod.string(),
   "pauseBeforeExternalActions": zod.boolean(),
   "showSourceContext": zod.boolean(),
-  "dailyDigest": zod.boolean()
+  "dailyDigest": zod.boolean(),
+  "onboardingCompleted": zod.boolean().describe('Whether the welcome tour was finished or skipped')
 })
 
 
@@ -619,6 +622,15 @@ export const UpdateWorkspaceAiKeyResponse = zod.object({
 export const DeleteWorkspaceAiKeyResponse = zod.object({
   "configured": zod.boolean(),
   "hint": zod.string().nullable().describe('Masked key preview (e.g. AIzaSy…9f2); never the full key')
+})
+
+
+/**
+ * Fills an empty workspace with example content so new users can explore. Does nothing if any agent already exists.
+ * @summary Load the sample workspace content (agents, workflows, projects, documents)
+ */
+export const SeedSampleDataResponse = zod.object({
+  "seeded": zod.boolean().describe('True when sample content was inserted')
 })
 
 

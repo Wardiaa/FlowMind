@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import {
   getListAgentsQueryKey,
+  getListProjectsQueryKey,
   getGetDashboardQueryKey,
   getListActivityQueryKey,
   getListDocumentsQueryKey,
@@ -67,6 +68,7 @@ import {
   useMarkNotificationRead,
   useSearchDocuments,
   useRunCommandCenter,
+  useSeedSampleData,
   useUpdateWorkflow,
   useUpdateWorkspaceAiKey,
   useUpdateWorkspaceSettings,
@@ -302,6 +304,7 @@ function Shell({ children }: { children: ReactNode }) {
         </header>
         <main className="mx-auto max-w-[1500px] px-5 py-7 md:px-9 md:py-9">{children}</main>
       </div>
+      <OnboardingTour />
     </div>
   );
 }
@@ -353,13 +356,14 @@ function DashboardPage() {
   };
   return <div className="animate-page-in">
     <PageHeading eyebrow={new Date().toLocaleDateString(undefined, { timeZone: workspaceSettings?.timezone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} title={`Good day${user?.firstName ? `, ${user.firstName}` : ''}.`} detail="A clear view of what your AI teammates handled and what needs your judgment today."><button data-testid="button-command-center" onClick={() => setShowCommand(true)} className="primary-button"><Sparkles size={15} />Ask command center</button></PageHeading>
+    {!activities.length && !projects.length && !approval?.pending && <div className="mb-5"><GettingStartedCard onAskCommand={() => setShowCommand(true)} /></div>}
     <MetricStrip metrics={metrics} />
     <div className="mt-7 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
       <section className="panel overflow-hidden"><div className="panel-header"><div><p className="eyebrow">Live pulse</p><h2 className="panel-title">Automation activity</h2></div><Link href="/activity" data-testid="link-view-all-activity" className="text-xs font-semibold text-teal-700 hover:text-teal-900">View all <ArrowRight className="ml-1 inline" size={13} /></Link></div><div className="px-5"><ActivityList items={activities} limit={5} /></div></section>
       <section className="panel"><div className="panel-header"><div><p className="eyebrow">Human in the loop</p><h2 className="panel-title">Approval queue</h2></div><Link href="/approvals" data-testid="link-open-approvals" className="text-xs font-semibold text-teal-700 hover:text-teal-900">All approvals <ArrowRight className="ml-1 inline" size={13} /></Link></div>{approval?.pending ? <div className="p-5"><div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-center gap-2"><Avatar initials={approval.agent.slice(0, 2).toUpperCase()} color="#f6d48b" size="sm" /><span className="text-xs font-semibold text-amber-900">{approval.agent}</span><span className="ml-auto text-[10px] text-amber-700">Needs review</span></div><h3 className="mt-4 text-sm font-semibold leading-5 text-slate-900">{approval.title}</h3><p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">“{approval.excerpt}”</p><div className="mt-4 flex gap-2"><button data-testid="button-approve-item" onClick={() => { setDraft(approval.draft); decide('Approved', approval.draft); }} disabled={decideApproval.isPending} className="secondary-button flex-1"><Check size={14} />Approve</button><button data-testid="button-review-item" onClick={() => { setDraft(approval.draft); setReviewing(true); }} className="dark-button flex-1">Review</button></div>{decideApproval.isError && <p className="mt-2 text-xs text-rose-700">{formatError(decideApproval.error)}</p>}</div></div> : <div className="p-5"><EmptyState icon={ShieldCheck} title="Queue is clear" detail="No decisions are waiting for a human right now." /></div>}</section>
     </div>
     <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-      <section className="panel"><div className="panel-header"><div><p className="eyebrow">Delivery radar</p><h2 className="panel-title">Projects at a glance</h2></div><Link href="/projects" data-testid="link-view-projects" className="icon-button"><ArrowRight size={16} /></Link></div><div className="divide-y divide-slate-100">{projects.slice(0, 4).map((project) => <Link href="/projects" data-testid={`project-glance-${project.id}`} key={project.id} className="flex items-center gap-3 px-5 py-4 transition hover:bg-slate-50"><span className="size-2 rounded-full" style={{ background: project.color }} /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-3"><p className="truncate text-sm font-semibold text-slate-800">{project.name}</p><span className="text-xs font-mono text-slate-500">{project.progress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-500" style={{ width: `${project.progress}%` }} /></div></div><StatusPill status={project.health} /></Link>)}</div></section>
+      <section className="panel"><div className="panel-header"><div><p className="eyebrow">Delivery radar</p><h2 className="panel-title">Projects at a glance</h2></div><Link href="/projects" data-testid="link-view-projects" className="icon-button"><ArrowRight size={16} /></Link></div>{projects.length ? <div className="divide-y divide-slate-100">{projects.slice(0, 4).map((project) => <Link href="/projects" data-testid={`project-glance-${project.id}`} key={project.id} className="flex items-center gap-3 px-5 py-4 transition hover:bg-slate-50"><span className="size-2 rounded-full" style={{ background: project.color }} /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-3"><p className="truncate text-sm font-semibold text-slate-800">{project.name}</p><span className="text-xs font-mono text-slate-500">{project.progress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-500" style={{ width: `${project.progress}%` }} /></div></div><StatusPill status={project.health} /></Link>)}</div> : <div className="px-5 py-4"><EmptyState icon={FolderKanban} title="No projects yet" detail="Delivery work you track will show up here as your workspace grows." /></div>}</section>
        <section className="panel flex flex-col justify-between overflow-hidden bg-slate-900 text-white"><div className="grid-pattern absolute" /><div className="relative p-6 md:p-7"><p className="eyebrow text-teal-300">Workspace insight</p><h2 className="mt-4 max-w-lg font-display text-2xl font-semibold leading-tight tracking-[-0.04em]">{projects.length ? `${projects.length} projects are in your workspace.` : 'Your workspace is ready for its first project.'}</h2><p className="mt-3 max-w-md text-sm leading-6 text-slate-400">Review project health and ask the command center to summarize delivery risks using your saved workspace data.</p><div className="mt-7 flex items-end gap-1.5"><span className="text-3xl font-semibold text-teal-300">{projects.filter((project) => project.health === 'On track').length}</span><span className="mb-1 text-xs text-slate-400">on track</span></div></div><div className="relative border-t border-white/10 px-6 py-4"><Link href="/analytics" data-testid="link-open-insights" className="text-xs font-semibold text-teal-300 hover:text-white">Explore the signal <ArrowRight className="ml-1 inline" size={13} /></Link></div></section>
     </div>
     {showCommand && <CommandCenterModal onClose={() => setShowCommand(false)} />}
@@ -387,7 +391,7 @@ function CommandCenterModal({ onClose }: { onClose: () => void }) {
   return <Modal title="Ask the command center" onClose={onClose}>
     <p className="mb-4 text-sm leading-6 text-slate-600">Ask about your saved agents, workflows, projects, or approval queue. The answer uses this workspace’s data.</p>
     <label className="field-label">Question<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(); }} className="field-input min-h-24 resize-y" placeholder="What should I review today?" /></label>
-    <div className="mt-4 flex justify-end"><button onClick={submit} disabled={!prompt.trim() || command.isPending} className="primary-button disabled:opacity-50">{command.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Send size={15} />}Ask Gemini</button></div>
+    <div className="mt-4 flex justify-end"><button data-testid="button-ask-command" onClick={submit} disabled={!prompt.trim() || command.isPending} className="primary-button disabled:opacity-50">{command.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Send size={15} />}Ask Gemini</button></div>
     {command.isError && <p role="alert" className="mt-3 text-sm text-rose-700">{formatError(command.error)}</p>}
     {answer && <div className="mt-5 whitespace-pre-wrap rounded-lg border border-teal-200 bg-teal-50/70 p-4 text-sm leading-6 text-slate-700">{answer}</div>}
     {answer && toolCalls.length > 0 && <div className="mt-4">
@@ -960,6 +964,7 @@ function SettingsPage() {
   return <div className="animate-page-in max-w-4xl"><PageHeading eyebrow="Workspace control" title="Settings" detail="Set the persisted defaults that shape how FlowMind works with your team." /><div className="space-y-5">
     <section className="panel"><div className="panel-header"><div><p className="eyebrow">Workspace</p><h2 className="panel-title">Identity & access</h2></div></div><div className="grid gap-4 p-5 md:grid-cols-2"><label className="field-label">Workspace name<input data-testid="input-workspace-name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="field-input" /></label><label className="field-label">Timezone<select data-testid="select-workspace-timezone" value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} className="field-input"><option value="Africa/Lagos">Africa/Lagos</option><option value="UTC">UTC</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="America/New_York">America/New_York</option><option value="Europe/London">Europe/London</option></select></label></div></section>
     <AiKeySection />
+    <section className="panel"><div className="panel-header"><div><p className="eyebrow">Onboarding</p><h2 className="panel-title">Welcome tour</h2></div><Sparkles size={18} className="text-teal-600" /></div><div className="flex flex-wrap items-center justify-between gap-3 p-5"><p className="max-w-md text-xs leading-5 text-slate-500">Take the short walkthrough again — agents, workflows, approvals, and how you stay in control.</p><button data-testid="button-replay-tour" onClick={() => update.mutate({ data: { onboardingCompleted: false } }, { onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingsQueryKey() }); } })} disabled={update.isPending} className="secondary-button shrink-0 disabled:opacity-50">Replay tour</button></div></section>
     <section className="panel"><div className="panel-header"><div><p className="eyebrow">AI defaults</p><h2 className="panel-title">How teammates behave</h2></div><Bot size={18} className="text-teal-600" /></div><div className="divide-y divide-slate-100">{toggles.map((toggle) => <div key={toggle.key} className="flex items-center gap-4 px-5 py-4"><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800">{toggle.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{toggle.detail}</p></div><button data-testid={`toggle-${toggle.key}`} aria-pressed={form[toggle.key]} onClick={() => setForm({ ...form, [toggle.key]: !form[toggle.key] })} className={cn('toggle-track', form[toggle.key] && 'toggle-on')}><span /></button></div>)}</div></section>
     {update.isError && <p role="alert" className="text-sm text-rose-700">{formatError(update.error)}</p>}
     <div className="flex items-center justify-end gap-3"><span className={cn('text-xs text-teal-700 transition-opacity', saved ? 'opacity-100' : 'opacity-0')}>Settings saved</span><button data-testid="button-save-settings" onClick={save} disabled={update.isPending || !form.name.trim()} className="primary-button disabled:opacity-50">{update.isPending ? <LoaderCircle className="animate-spin" size={15} /> : <Check size={15} />}Save changes</button></div>
@@ -999,6 +1004,136 @@ function AiKeySection() {
       {(saveKey.isError || removeKey.isError) && <p role="alert" className="text-sm text-rose-700">{formatError(saveKey.isError ? saveKey.error : removeKey.error)}</p>}
     </div>
   </section>;
+}
+
+const SAMPLE_DATA_QUERY_KEYS = [
+  getGetDashboardQueryKey(),
+  getListAgentsQueryKey(),
+  getListWorkflowsQueryKey(),
+  getListProjectsQueryKey(),
+  getListDocumentsQueryKey(),
+  getListActivityQueryKey(),
+  getListApprovalsQueryKey(),
+  getGetAiUsageQueryKey(),
+];
+
+const ONBOARDING_STEPS = [
+  {
+    icon: Sparkles,
+    title: 'Welcome to FlowMind',
+    detail: 'Your workspace starts empty — no sample data, no clutter. Build it at your own pace: AI agents, automations, and a private knowledge base, all scoped to your account.',
+  },
+  {
+    icon: Bot,
+    title: 'Meet your AI teammates',
+    detail: 'Create an agent, give it a job, and run it whenever you need it — answers stream in live from Gemini. Agents can use your uploaded documents as private context.',
+  },
+  {
+    icon: Zap,
+    title: 'Automate with workflows',
+    detail: 'Chain steps into a workflow. Prefix a step with “ai:” to let Gemini produce it, or “approval:” to pause the run until a human signs off. Start runs manually, on a schedule, or by webhook.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'You stay in control',
+    detail: 'Drafts wait in the approval queue until you accept or edit them. Optional: add your own Gemini key in Settings any time to run AI features on your own quota.',
+  },
+];
+
+function OnboardingTour() {
+  const queryClient = useQueryClient();
+  const { data: settings } = useGetWorkspaceSettings();
+  const updateSettings = useUpdateWorkspaceSettings();
+  const seedSample = useSeedSampleData();
+  const [step, setStep] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  if (!settings || settings.onboardingCompleted || dismissed) return null;
+  const current = ONBOARDING_STEPS[step];
+  const isLast = step === ONBOARDING_STEPS.length - 1;
+  const finish = () => {
+    setDismissed(true);
+    updateSettings.mutate({ data: { onboardingCompleted: true } }, { onSuccess: () => { void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingsQueryKey() }); } });
+  };
+  const loadSample = () => {
+    seedSample.mutate(undefined, {
+      onSuccess: async () => {
+        setDismissed(true);
+        updateSettings.mutate({ data: { onboardingCompleted: true } });
+        await Promise.all(SAMPLE_DATA_QUERY_KEYS.map((key) => queryClient.invalidateQueries({ queryKey: key })));
+      },
+    });
+  };
+  return (
+    <div data-testid="onboarding-tour" role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg animate-modal-in rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-2.5"><span className="brand-mark"><span /></span><span className="font-display text-[15px] font-semibold tracking-[-0.03em] text-slate-950">flowmind</span></div>
+          <button data-testid="button-skip-tour" onClick={finish} className="text-xs font-semibold text-slate-400 transition hover:text-slate-700">Skip tour</button>
+        </div>
+        <div className="px-6 py-7">
+          <span className="flex size-11 items-center justify-center rounded-lg bg-teal-500/10 text-teal-700"><current.icon size={20} /></span>
+          <p className="eyebrow mt-5">Step {step + 1} of {ONBOARDING_STEPS.length}</p>
+          <h2 data-testid={`onboarding-step-${step}`} className="mt-2 font-display text-2xl font-semibold tracking-[-0.04em] text-slate-950">{current.title}</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600">{current.detail}</p>
+          <div className="mt-6 flex items-center gap-1.5">
+            {ONBOARDING_STEPS.map((item, index) => <button key={item.title} aria-label={`Go to step ${index + 1}`} onClick={() => setStep(index)} className={cn('h-1.5 rounded-full transition-all', index === step ? 'w-6 bg-teal-600' : 'w-1.5 bg-slate-200 hover:bg-slate-300')} />)}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-6 py-4">
+          <button data-testid="button-tour-back" onClick={() => setStep((value) => Math.max(0, value - 1))} disabled={step === 0} className="secondary-button disabled:opacity-40">Back</button>
+          {isLast ? (
+            <div className="flex items-center gap-2">
+              <button data-testid="button-tour-load-sample" onClick={loadSample} disabled={seedSample.isPending} className="secondary-button disabled:opacity-50">{seedSample.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}Load sample workspace</button>
+              <button data-testid="button-tour-finish" onClick={finish} className="primary-button">Start building<ArrowRight size={15} /></button>
+            </div>
+          ) : (
+            <button data-testid="button-tour-next" onClick={() => setStep((value) => Math.min(ONBOARDING_STEPS.length - 1, value + 1))} className="primary-button">Next<ArrowRight size={15} /></button>
+          )}
+        </div>
+        {seedSample.isError && <p role="alert" className="px-6 pb-4 text-xs text-rose-700">{formatError(seedSample.error)}</p>}
+      </div>
+    </div>
+  );
+}
+
+function GettingStartedCard({ onAskCommand }: { onAskCommand: () => void }) {
+  const queryClient = useQueryClient();
+  const seedSample = useSeedSampleData();
+  const loadSample = () => seedSample.mutate(undefined, {
+    onSuccess: async () => { await Promise.all(SAMPLE_DATA_QUERY_KEYS.map((key) => queryClient.invalidateQueries({ queryKey: key }))); },
+  });
+  const steps: Array<{ icon: typeof Bot; title: string; detail: string; href?: string; action?: () => void }> = [
+    { icon: Bot, title: 'Create your first AI agent', detail: 'Give it a job, then run it — answers stream in live.', href: '/agents' },
+    { icon: Upload, title: 'Add a document', detail: 'Uploads become private knowledge your agents can search and cite.', href: '/documents' },
+    { icon: Command, title: 'Ask the command center', detail: 'One question about anything already in your workspace.', action: onAskCommand },
+  ];
+  const row = (item: typeof steps[number]) => (
+    <>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-teal-500/10 text-teal-700"><item.icon size={16} /></span>
+      <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-slate-800">{item.title}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{item.detail}</span></span>
+      <ArrowRight size={15} className="shrink-0 text-slate-400" />
+    </>
+  );
+  return (
+    <section data-testid="panel-getting-started" className="panel animate-page-in">
+      <div className="panel-header">
+        <div><p className="eyebrow">First run</p><h2 className="panel-title">Get your workspace moving</h2></div>
+        <Sparkles size={18} className="text-teal-600" />
+      </div>
+      <div className="divide-y divide-slate-100">
+        {steps.map((item) => item.href ? (
+          <Link key={item.title} href={item.href} className="flex items-center gap-4 px-5 py-4 transition hover:bg-slate-50">{row(item)}</Link>
+        ) : (
+          <button key={item.title} type="button" onClick={item.action} className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-slate-50">{row(item)}</button>
+        ))}
+      </div>
+      <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs leading-5 text-slate-500">Prefer to look around first? Load example agents, workflows, projects, and documents to explore.</p>
+        <button data-testid="button-load-sample" onClick={loadSample} disabled={seedSample.isPending} className="secondary-button shrink-0 disabled:opacity-50">{seedSample.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}Load sample workspace</button>
+      </div>
+      {seedSample.isError && <p role="alert" className="px-5 pb-4 text-xs text-rose-700">{formatError(seedSample.error)}</p>}
+    </section>
+  );
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {

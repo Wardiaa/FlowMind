@@ -2,6 +2,12 @@
 
 FlowMind is a workspace operations dashboard for AI-assisted agents, workflows, project analysis, and document knowledge. Data is scoped to the signed-in workspace user.
 
+## First run
+
+A brand-new account starts with an empty workspace — no sample agents, workflows, projects, or documents. A short welcome tour (four steps) introduces agents, workflows, approvals, and your data controls; it appears once and can be skipped, replayed later from **Workspace settings → Welcome tour**, or dismissed without affecting anything else.
+
+On the empty Overview page you can start directly — create an agent, upload a document, or ask the command center — or use **Load sample workspace** to fill the workspace with example agents, workflows, projects, and documents to explore. Sample content is added only when the workspace has no agents yet.
+
 ## Overview
 
 The Overview page summarizes workspace activity and delivery status. Use **Ask command center** to ask a question about the workspace’s agents, workflows, projects, and approvals. The command center can look up projects, workflows, agents, pending approvals, recent activity, and search your documents; the answer lists the sources it used as chips (document chips link to the Documents page). Responses are generated from the information FlowMind has stored; check important conclusions against the source records.
@@ -58,6 +64,8 @@ The Activity log lists recorded workspace events such as agent/workflow runs, pr
 ## Workspace settings
 
 Open **Workspace settings** to update the workspace name and timezone and adjust the available review/source-context/digest preferences. These settings affect how the workspace presents dates and how the app handles review preferences.
+
+**Welcome tour** lets you replay the first-run walkthrough at any time.
 
 You can also add a **personal Gemini API key** (from Google AI Studio). AI features then run on your own key and quota instead of the server's shared one. The key is stored encrypted on the server, shown only as a masked hint (for example `AIzaSy…9f2`), and never displayed in full again; you can replace or remove it at any time. Document indexing (embeddings) still uses the server's key when present, and removing your key switches AI features back to the shared key.
 

@@ -7,7 +7,7 @@ import {
   MarkNotificationReadResponse,
 } from "@workspace/api-zod";
 import { Router, type IRouter, type Request } from "express";
-import { ensureWorkspaceSeeded } from "../lib/flowmindSeed";
+import { ensureWorkspaceSettings } from "../lib/flowmindSeed";
 
 const router: IRouter = Router();
 
@@ -26,7 +26,7 @@ router.use((req, res, next) => {
 
 router.use(async (req, res, next) => {
   try {
-    await ensureWorkspaceSeeded(owner(req));
+    await ensureWorkspaceSettings(owner(req));
     next();
   } catch (error) {
     next(error);

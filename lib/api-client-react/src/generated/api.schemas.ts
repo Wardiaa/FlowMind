@@ -501,6 +501,8 @@ export interface WorkspaceSettings {
   pauseBeforeExternalActions: boolean;
   showSourceContext: boolean;
   dailyDigest: boolean;
+  /** Whether the welcome tour was finished or skipped */
+  onboardingCompleted: boolean;
 }
 
 export interface WorkspaceSettingsUpdate {
@@ -511,6 +513,7 @@ export interface WorkspaceSettingsUpdate {
   pauseBeforeExternalActions?: boolean;
   showSourceContext?: boolean;
   dailyDigest?: boolean;
+  onboardingCompleted?: boolean;
 }
 
 export interface WorkspaceAiKeyStatus {
@@ -528,6 +531,11 @@ export interface WorkspaceAiKeyInput {
      * @maxLength 200
      */
   key: string;
+}
+
+export interface SampleDataResponse {
+  /** True when sample content was inserted */
+  seeded: boolean;
 }
 
 export interface UploadUrlRequest {

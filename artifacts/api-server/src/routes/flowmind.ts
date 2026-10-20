@@ -51,6 +51,7 @@ import {
   RunWorkflowResponse,
   SearchDocumentsBody,
   SearchDocumentsResponse,
+  SeedSampleDataResponse,
   UpdateWorkflowBody,
   UpdateWorkflowParams,
   UpdateWorkflowResponse,
@@ -67,7 +68,7 @@ import { deleteWorkspaceAiKey, getWorkspaceAiKeyState, resolveWorkspaceAiKey, sa
 import { encryptionConfigured } from "../lib/secrets";
 import { chunkText } from "../lib/chunking";
 import { nextRun } from "../lib/cron";
-import { backfillWorkspaceContent, ensureWorkspaceSeeded } from "../lib/flowmindSeed";
+import { backfillWorkspaceContent, ensureWorkspaceSettings, seedWorkspaceDemoContent } from "../lib/flowmindSeed";
 import { createNotification } from "../lib/notify";
 import { disableIndexing, indexDocument, searchChunks } from "../lib/retrieval";
 import { runCommandCenter } from "../lib/commandTools";
@@ -96,7 +97,7 @@ const backfilledOwners = new Set<string>();
 router.use(async (req, res, next) => {
   try {
     const userId = owner(req);
-    await ensureWorkspaceSeeded(userId);
+    await ensureWorkspaceSettings(userId);
     if (!backfilledOwners.has(userId)) {
       backfilledOwners.add(userId);
       await backfillWorkspaceContent(userId);
@@ -764,6 +765,7 @@ router.patch("/settings", async (req, res, next) => {
       ...(body.pauseBeforeExternalActions !== undefined ? { pauseBeforeExternalActions: body.pauseBeforeExternalActions } : {}),
       ...(body.showSourceContext !== undefined ? { showSourceContext: body.showSourceContext } : {}),
       ...(body.dailyDigest !== undefined ? { dailyDigest: body.dailyDigest } : {}),
+      ...(body.onboardingCompleted !== undefined ? { onboardingCompleted: body.onboardingCompleted } : {}),
       updatedAt: new Date(),
     }).where(eq(workspaceSettingsTable.ownerId, userId)).returning();
     res.json(UpdateWorkspaceSettingsResponse.parse(settings));
@@ -796,6 +798,21 @@ router.delete("/ai-key", async (req, res, next) => {
   try {
     await deleteWorkspaceAiKey(owner(req));
     res.json(DeleteWorkspaceAiKeyResponse.parse({ configured: false, hint: null }));
+  } catch (error) { next(error); }
+});
+
+router.post("/sample-data", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const seeded = await seedWorkspaceDemoContent(userId);
+    if (seeded) {
+      // Indexing calls Gemini and can take seconds; documents stay searchable
+      // by keyword until chunks exist, so do not block the response on it.
+      void backfillWorkspaceContent(userId).catch((error) => {
+        req.log.warn({ err: error }, "Sample data indexing failed");
+      });
+    }
+    res.json(SeedSampleDataResponse.parse({ seeded }));
   } catch (error) { next(error); }
 });
 

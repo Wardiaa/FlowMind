@@ -451,6 +451,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceAiKeyStatus"
+  /sample-data:
+    post:
+      operationId: seedSampleData
+      tags: [settings]
+      summary: Load the sample workspace content (agents, workflows, projects, documents)
+      description: Fills an empty workspace with example content so new users can explore. Does nothing if any agent already exists.
+      responses:
+        "200":
+          description: Sample data result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SampleDataResponse"
   /command:
     post:
       operationId: runCommandCenter
@@ -915,13 +928,14 @@ components:
         draft: { type: string }
     WorkspaceSettings:
       type: object
-      required: [name, timezone, pauseBeforeExternalActions, showSourceContext, dailyDigest]
+      required: [name, timezone, pauseBeforeExternalActions, showSourceContext, dailyDigest, onboardingCompleted]
       properties:
         name: { type: string }
         timezone: { type: string }
         pauseBeforeExternalActions: { type: boolean }
         showSourceContext: { type: boolean }
         dailyDigest: { type: boolean }
+        onboardingCompleted: { type: boolean, description: Whether the welcome tour was finished or skipped }
     WorkspaceSettingsUpdate:
       type: object
       properties:
@@ -930,6 +944,7 @@ components:
         pauseBeforeExternalActions: { type: boolean }
         showSourceContext: { type: boolean }
         dailyDigest: { type: boolean }
+        onboardingCompleted: { type: boolean }
     WorkspaceAiKeyStatus:
       type: object
       required: [configured, hint]
@@ -941,6 +956,11 @@ components:
       required: [key]
       properties:
         key: { type: string, minLength: 20, maxLength: 200 }
+    SampleDataResponse:
+      type: object
+      required: [seeded]
+      properties:
+        seeded: { type: boolean, description: True when sample content was inserted, false when the workspace already had content }
     UploadUrlRequest:
       type: object
       required: [name, size, contentType]

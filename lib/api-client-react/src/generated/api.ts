@@ -45,6 +45,7 @@ import type {
   NotificationList,
   Project,
   PromptInput,
+  SampleDataResponse,
   UploadUrlRequest,
   UploadUrlResponse,
   Workflow,
@@ -2407,6 +2408,81 @@ export const useDeleteWorkspaceAiKey = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteWorkspaceAiKeyMutationOptions(options));
+    }
+
+export const getSeedSampleDataUrl = () => {
+
+
+
+
+  return `/api/sample-data`
+}
+
+/**
+ * Fills an empty workspace with example content so new users can explore. Does nothing if any agent already exists.
+ * @summary Load the sample workspace content (agents, workflows, projects, documents)
+ */
+export const seedSampleData = async ( options?: Parameters<typeof customFetch>[1]): Promise<SampleDataResponse> => {
+
+  return customFetch<SampleDataResponse>(getSeedSampleDataUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSeedSampleDataMutationKey = () => ['seedSampleData'] as const;
+
+export const getSeedSampleDataMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof seedSampleData>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof seedSampleData>>, TError,void, TContext> => {
+
+const mutationKey = getSeedSampleDataMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof seedSampleData>>, void> = () => {
+
+
+          return  seedSampleData(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SeedSampleDataMutationResult = NonNullable<Awaited<ReturnType<typeof seedSampleData>>>
+
+    export type SeedSampleDataMutationError = ErrorType<unknown>
+
+
+    /**
+ * @summary Load the sample workspace content (agents, workflows, projects, documents)
+ */
+export const useSeedSampleData = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof seedSampleData>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof seedSampleData>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getSeedSampleDataMutationOptions(options));
     }
 
 export const getRunCommandCenterUrl = () => {

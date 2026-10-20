@@ -54,6 +54,7 @@ export * from './notificationList';
 export * from './project';
 export * from './projectHealth';
 export * from './promptInput';
+export * from './sampleDataResponse';
 export * from './uploadUrlRequest';
 export * from './uploadUrlResponse';
 export * from './workflow';
