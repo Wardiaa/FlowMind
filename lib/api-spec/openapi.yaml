@@ -111,6 +111,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentRunList"
+  /agents/{id}:
+    delete:
+      operationId: deleteAgent
+      tags: [agents]
+      summary: Delete an AI agent and its run history
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Agent deleted
   /workflows:
     get:
       operationId: listWorkflows
@@ -162,6 +172,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workflow"
+    delete:
+      operationId: deleteWorkflow
+      tags: [workflows]
+      summary: Delete a workflow, its executions and pending approvals
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Workflow deleted
   /workflows/{id}/run:
     post:
       operationId: runWorkflow
@@ -218,6 +237,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnalysisResponse"
+  /projects/{id}:
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Project deleted
   /documents:
     get:
       operationId: listDocuments

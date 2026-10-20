@@ -145,6 +145,16 @@ export const ListAgentRunsResponse = zod.object({
 
 
 /**
+ * @summary Delete an AI agent and its run history
+ */
+export const DeleteAgentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteAgentResponse = zod.void()
+
+
+/**
  * @summary List automation workflows
  */
 export const ListWorkflowsResponseItem = zod.object({
@@ -239,6 +249,16 @@ export const UpdateWorkflowResponse = zod.object({
 
 
 /**
+ * @summary Delete a workflow, its executions and pending approvals
+ */
+export const DeleteWorkflowParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteWorkflowResponse = zod.void()
+
+
+/**
  * @summary Start a workflow run
  */
 export const RunWorkflowParams = zod.object({
@@ -323,6 +343,16 @@ export const AnalyzeProjectParams = zod.object({
 export const AnalyzeProjectResponse = zod.object({
   "answer": zod.string()
 })
+
+
+/**
+ * @summary Delete a project
+ */
+export const DeleteProjectParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteProjectResponse = zod.void()
 
 
 /**

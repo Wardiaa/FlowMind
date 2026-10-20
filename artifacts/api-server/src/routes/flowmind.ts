@@ -25,7 +25,10 @@ import {
   DecideApprovalBody,
   DecideApprovalParams,
   DecideApprovalResponse,
+  DeleteAgentParams,
   DeleteDocumentParams,
+  DeleteProjectParams,
+  DeleteWorkflowParams,
   GetAiUsageQueryParams,
   GetAiUsageResponse,
   GetDashboardResponse,
@@ -318,6 +321,22 @@ router.post("/agents", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.delete("/agents/:id", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const { id } = DeleteAgentParams.parse(req.params);
+    const [agent] = await db.select().from(agentsTable).where(and(eq(agentsTable.id, id), eq(agentsTable.ownerId, userId)));
+    if (!agent) { res.status(404).json({ error: "Agent not found." }); return; }
+    await db.delete(agentRunsTable).where(and(eq(agentRunsTable.ownerId, userId), eq(agentRunsTable.agentId, agent.id)));
+    await db.delete(agentsTable).where(and(eq(agentsTable.id, agent.id), eq(agentsTable.ownerId, userId)));
+    await recordActivity(userId, {
+      title: agent.name, action: "removed agent", detail: agent.description.slice(0, 120),
+      status: "Completed", color: agent.color,
+    });
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
 async function prepareAgentRun(req: Request, res: Response) {
   const userId = owner(req);
   const { id } = RunAgentParams.parse(req.params);
@@ -519,6 +538,26 @@ router.patch("/workflows/:id", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.delete("/workflows/:id", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const { id } = DeleteWorkflowParams.parse(req.params);
+    const [workflow] = await db.select().from(workflowsTable).where(and(eq(workflowsTable.id, id), eq(workflowsTable.ownerId, userId)));
+    if (!workflow) { res.status(404).json({ error: "Workflow not found." }); return; }
+    // Remove the history too — orphaned executions would leave approvals that
+    // crash the decision route when their execution is gone. In-flight engine
+    // steps become no-ops (they bail out when the execution row is missing).
+    await db.delete(approvalsTable).where(and(eq(approvalsTable.ownerId, userId), eq(approvalsTable.workflowId, workflow.id)));
+    await db.delete(executionsTable).where(and(eq(executionsTable.ownerId, userId), eq(executionsTable.workflowId, workflow.id)));
+    await db.delete(workflowsTable).where(and(eq(workflowsTable.id, workflow.id), eq(workflowsTable.ownerId, userId)));
+    await recordActivity(userId, {
+      title: workflow.name, action: "removed workflow", detail: workflow.trigger,
+      status: "Completed", color: workflow.color,
+    });
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
 router.post("/workflows/:id/run", async (req, res, next) => {
   try {
     const userId = owner(req);
@@ -547,6 +586,21 @@ router.get("/projects", async (req, res, next) => {
   try {
     const rows = await db.select().from(projectsTable).where(eq(projectsTable.ownerId, owner(req)));
     res.json(ListProjectsResponse.parse(rows));
+  } catch (error) { next(error); }
+});
+
+router.delete("/projects/:id", async (req, res, next) => {
+  try {
+    const userId = owner(req);
+    const { id } = DeleteProjectParams.parse(req.params);
+    const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.ownerId, userId)));
+    if (!project) { res.status(404).json({ error: "Project not found." }); return; }
+    await db.delete(projectsTable).where(and(eq(projectsTable.id, project.id), eq(projectsTable.ownerId, userId)));
+    await recordActivity(userId, {
+      title: project.name, action: "removed project", detail: `${project.progress}% complete · ${project.tasks} tasks`,
+      status: "Completed", color: project.color,
+    });
+    res.status(204).end();
   } catch (error) { next(error); }
 });
 

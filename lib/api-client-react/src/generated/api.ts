@@ -571,6 +571,80 @@ export function useListAgentRuns<TData = Awaited<ReturnType<typeof listAgentRuns
 
 
 
+export const getDeleteAgentUrl = (id: string,) => {
+
+
+
+
+  return `/api/agents/${id}`
+}
+
+/**
+ * @summary Delete an AI agent and its run history
+ */
+export const deleteAgent = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteAgentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteAgentMutationKey = () => ['deleteAgent'] as const;
+
+export const getDeleteAgentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgent>>, TError,DeleteAgentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAgent>>, TError,DeleteAgentMutationVariables, TContext> => {
+
+const mutationKey = getDeleteAgentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAgent>>, DeleteAgentMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteAgent(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAgentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAgent>>>
+
+    export type DeleteAgentMutationError = ErrorType<unknown>
+    export type DeleteAgentMutationVariables = {id: string}
+
+    /**
+ * @summary Delete an AI agent and its run history
+ */
+export const useDeleteAgent = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgent>>, TError,DeleteAgentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAgent>>,
+        TError,
+        DeleteAgentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteAgentMutationOptions(options));
+    }
+
 export const getListWorkflowsUrl = () => {
 
 
@@ -823,6 +897,80 @@ export const useUpdateWorkflow = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateWorkflowMutationOptions(options));
+    }
+
+export const getDeleteWorkflowUrl = (id: string,) => {
+
+
+
+
+  return `/api/workflows/${id}`
+}
+
+/**
+ * @summary Delete a workflow, its executions and pending approvals
+ */
+export const deleteWorkflow = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteWorkflowUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteWorkflowMutationKey = () => ['deleteWorkflow'] as const;
+
+export const getDeleteWorkflowMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflow>>, TError,DeleteWorkflowMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflow>>, TError,DeleteWorkflowMutationVariables, TContext> => {
+
+const mutationKey = getDeleteWorkflowMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWorkflow>>, DeleteWorkflowMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteWorkflow(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWorkflowMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWorkflow>>>
+
+    export type DeleteWorkflowMutationError = ErrorType<unknown>
+    export type DeleteWorkflowMutationVariables = {id: string}
+
+    /**
+ * @summary Delete a workflow, its executions and pending approvals
+ */
+export const useDeleteWorkflow = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflow>>, TError,DeleteWorkflowMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWorkflow>>,
+        TError,
+        DeleteWorkflowMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteWorkflowMutationOptions(options));
     }
 
 export const getRunWorkflowUrl = (id: string,) => {
@@ -1125,6 +1273,80 @@ export const useAnalyzeProject = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAnalyzeProjectMutationOptions(options));
+    }
+
+export const getDeleteProjectUrl = (id: string,) => {
+
+
+
+
+  return `/api/projects/${id}`
+}
+
+/**
+ * @summary Delete a project
+ */
+export const deleteProject = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteProjectUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteProjectMutationKey = () => ['deleteProject'] as const;
+
+export const getDeleteProjectMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,DeleteProjectMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,DeleteProjectMutationVariables, TContext> => {
+
+const mutationKey = getDeleteProjectMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteProject>>, DeleteProjectMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteProject(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteProjectMutationResult = NonNullable<Awaited<ReturnType<typeof deleteProject>>>
+
+    export type DeleteProjectMutationError = ErrorType<unknown>
+    export type DeleteProjectMutationVariables = {id: string}
+
+    /**
+ * @summary Delete a project
+ */
+export const useDeleteProject = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,DeleteProjectMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteProject>>,
+        TError,
+        DeleteProjectMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteProjectMutationOptions(options));
     }
 
 export const getListDocumentsUrl = () => {

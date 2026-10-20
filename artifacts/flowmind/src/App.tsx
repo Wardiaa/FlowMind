@@ -73,6 +73,9 @@ import {
   useUpdateWorkspaceAiKey,
   useUpdateWorkspaceSettings,
   useCreateAgent,
+  useDeleteAgent,
+  useDeleteProject,
+  useDeleteWorkflow,
   useGetDashboard,
   useHealthCheck,
   useListActivity,
@@ -426,7 +429,25 @@ function AgentsPage() {
 }
 
 function AgentCard({ agent }: { agent: Agent }) {
-  return <Link href={`/agents/${agent.id}`} data-testid={`card-agent-${agent.id}`} className="panel group block p-5 transition duration-200 hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-md"><div className="flex items-start justify-between"><div className="flex items-center gap-3"><Avatar initials={agent.initials} color={agent.color} /><div><h2 className="font-display font-semibold tracking-[-0.02em] text-slate-900">{agent.name}</h2><p className="mt-0.5 text-[11px] text-slate-500">{agent.type}</p></div></div><StatusPill status={agent.status} /></div><p className="mt-5 line-clamp-2 min-h-10 text-sm leading-5 text-slate-600">{agent.description}</p><div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4"><div className="flex items-center gap-2 text-xs text-slate-500"><Activity size={14} className="text-teal-600" /><span><strong className="font-semibold text-slate-800">{agent.runs.toLocaleString()}</strong> runs</span></div><div className="flex -space-x-1">{agent.tools.slice(0, 3).map((tool) => <span key={tool} title={tool} className="flex size-6 items-center justify-center rounded border-2 border-white bg-slate-100 text-[9px] font-semibold text-slate-500">{tool.slice(0, 1)}</span>)}</div></div></Link>;
+  const deleteAgent = useDeleteAgent();
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const confirmDelete = () => deleteAgent.mutate({ id: agent.id }, {
+    onSuccess: async () => {
+      setConfirming(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
+      ]);
+    },
+  });
+  return <div className="group relative">
+    <Link href={`/agents/${agent.id}`} data-testid={`card-agent-${agent.id}`} className="panel block p-5 transition duration-200 hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-md"><div className="flex items-start justify-between"><div className="flex items-center gap-3"><Avatar initials={agent.initials} color={agent.color} /><div><h2 className="font-display font-semibold tracking-[-0.02em] text-slate-900">{agent.name}</h2><p className="mt-0.5 text-[11px] text-slate-500">{agent.type}</p></div></div><div className="pr-9"><StatusPill status={agent.status} /></div></div><p className="mt-5 line-clamp-2 min-h-10 text-sm leading-5 text-slate-600">{agent.description}</p><div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4"><div className="flex items-center gap-2 text-xs text-slate-500"><Activity size={14} className="text-teal-600" /><span><strong className="font-semibold text-slate-800">{agent.runs.toLocaleString()}</strong> runs</span></div><div className="flex -space-x-1">{agent.tools.slice(0, 3).map((tool) => <span key={tool} title={tool} className="flex size-6 items-center justify-center rounded border-2 border-white bg-slate-100 text-[9px] font-semibold text-slate-500">{tool.slice(0, 1)}</span>)}</div></div></Link>
+    <CardDeleteButton testId={`button-delete-agent-${agent.id}`} className="right-4 top-4" onOpen={() => setConfirming(true)} />
+    {confirming && <ConfirmDialog testId="agent" title={`Delete ${agent.name}?`} body="This agent and its saved run history will be permanently removed from the workspace." confirmLabel="Delete agent" pending={deleteAgent.isPending} onConfirm={confirmDelete} onClose={() => setConfirming(false)} />}
+    {deleteAgent.isError && <p role="alert" className="mt-2 text-xs text-rose-700">{formatError(deleteAgent.error)}</p>}
+  </div>;
 }
 
 async function streamAgentRun(agentId: string, prompt: string, onDelta: (text: string) => void): Promise<void> {
@@ -471,15 +492,29 @@ function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading } = useListAgents();
   const queryClient = useQueryClient();
+  const deleteAgent = useDeleteAgent();
+  const [, navigate] = useLocation();
   const agent = (data || []).find((item) => item.id === id) || (data || [])[0];
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [runError, setRunError] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const [sent, setSent] = useState<Array<{ key: number; prompt: string; answer: string | null }>>([]);
   const { data: runData } = useListAgentRuns(agent?.id || 'none', { query: { queryKey: getListAgentRunsQueryKey(agent?.id || 'none'), enabled: Boolean(agent) } });
   const runHistory = runData?.items || [];
   if (isLoading) return <Skeleton className="h-96" />;
   if (!agent) return <EmptyState icon={Bot} title="Agent not found" detail="This teammate may have been removed from the workspace." />;
+  const confirmDelete = () => deleteAgent.mutate({ id: agent.id }, {
+    onSuccess: async () => {
+      setConfirming(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
+      ]);
+      navigate('/agents');
+    },
+  });
   const submit = async () => {
     const prompt = input.trim();
     if (!prompt || streaming) return;
@@ -509,7 +544,7 @@ function AgentDetailPage() {
     <Link href="/agents" data-testid="link-back-agents" className="mb-6 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-teal-700">← All agents</Link>
     <div className="grid gap-5 xl:grid-cols-[1fr_0.7fr]">
       <section className="panel overflow-hidden">
-        <div className="border-b border-slate-100 bg-slate-50/70 p-6 md:p-8"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-center gap-4"><Avatar initials={agent.initials} color={agent.color} size="lg" /><div><p className="eyebrow">AI teammate</p><h1 className="mt-1 font-display text-3xl font-semibold tracking-[-0.05em] text-slate-950">{agent.name}</h1><p className="mt-1 text-sm text-slate-500">{agent.type}</p></div></div><StatusPill status={agent.status} /></div><p className="mt-6 max-w-2xl text-sm leading-6 text-slate-600">{agent.description}</p></div>
+        <div className="border-b border-slate-100 bg-slate-50/70 p-6 md:p-8"><div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-center gap-4"><Avatar initials={agent.initials} color={agent.color} size="lg" /><div><p className="eyebrow">AI teammate</p><h1 className="mt-1 font-display text-3xl font-semibold tracking-[-0.05em] text-slate-950">{agent.name}</h1><p className="mt-1 text-sm text-slate-500">{agent.type}</p></div></div><div className="flex items-center gap-2"><StatusPill status={agent.status} /><button data-testid="button-delete-agent-detail" onClick={() => setConfirming(true)} className="secondary-button text-rose-600 hover:border-rose-300 hover:bg-rose-50"><Trash2 size={14} />Delete</button></div></div><p className="mt-6 max-w-2xl text-sm leading-6 text-slate-600">{agent.description}</p></div>
         <div className="p-6 md:p-8"><div className="flex items-center justify-between"><div><p className="eyebrow">Test bench</p><h2 className="panel-title mt-1">Ask this teammate</h2></div><span className="text-xs text-slate-400">Streams live · private context follows workspace settings</span></div>
           <div className="mt-5 min-h-44 space-y-4 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
             {!sent.length && <div className="flex h-36 flex-col items-center justify-center text-center"><Sparkles size={20} className="text-teal-600" /><p className="mt-2 text-sm font-medium text-slate-700">Give {agent.name} a task</p><p className="mt-1 text-xs text-slate-500">Try: “What should I review first?”</p></div>}
@@ -531,6 +566,7 @@ function AgentDetailPage() {
             {run.answer && <p className="mt-2 whitespace-pre-wrap border-t border-slate-100 pt-2 text-[11px] leading-5 text-slate-600">{run.answer}</p>}
           </details>)}</div></div><div className="panel p-6"><p className="eyebrow">Configured tool labels</p><p className="mt-1 text-xs leading-5 text-slate-500">These describe agent capabilities; no external services are connected.</p><div className="mt-4 space-y-2">{agent.tools.map((tool) => <div key={tool} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2.5"><span className="flex size-7 items-center justify-center rounded-md bg-teal-50 text-teal-700"><Database size={14} /></span><span className="text-sm font-medium text-slate-700">{tool}</span><span className="ml-auto text-[10px] text-slate-400">Defined</span></div>)}</div></div></aside>
     </div>
+    {confirming && <ConfirmDialog testId="agent-detail" title={`Delete ${agent.name}?`} body="This agent and its saved run history will be permanently removed from the workspace." confirmLabel="Delete agent" pending={deleteAgent.isPending} onConfirm={confirmDelete} onClose={() => setConfirming(false)} />}
   </div>;
 }
 
@@ -544,7 +580,26 @@ function WorkflowsPage() {
 }
 
 function WorkflowRow({ workflow }: { workflow: Workflow }) {
-  return <Link href={`/workflows/${workflow.id}`} data-testid={`row-workflow-${workflow.id}`} className="panel flex flex-col gap-4 p-5 transition hover:border-teal-300 sm:flex-row sm:items-center"><span className="size-2.5 shrink-0 rounded-full" style={{ background: workflow.color }} /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-3"><h2 className="font-display font-semibold text-slate-900">{workflow.name}</h2><StatusPill status={workflow.status} /></div><p className="mt-1 text-xs text-slate-500">When {workflow.trigger.toLowerCase()}</p></div><div className="grid grid-cols-3 gap-8 text-right sm:mr-5"><div><p className="text-[10px] uppercase tracking-wider text-slate-400">Runs</p><p className="mt-1 font-mono text-sm font-medium text-slate-800">{workflow.runs.toLocaleString()}</p></div><div><p className="text-[10px] uppercase tracking-wider text-slate-400">Success</p><p className="mt-1 font-mono text-sm font-medium text-teal-700">{workflow.success}</p></div><div><p className="text-[10px] uppercase tracking-wider text-slate-400">Last run</p><p className="mt-1 text-xs text-slate-600">{workflow.lastRun}</p></div></div><ArrowRight className="hidden text-slate-400 sm:block" size={17} /></Link>;
+  const deleteWorkflow = useDeleteWorkflow();
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const confirmDelete = () => deleteWorkflow.mutate({ id: workflow.id }, {
+    onSuccess: async () => {
+      setConfirming(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListWorkflowsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListApprovalsQueryKey() }),
+      ]);
+    },
+  });
+  return <div className="group relative">
+    <Link href={`/workflows/${workflow.id}`} data-testid={`row-workflow-${workflow.id}`} className="panel flex flex-col gap-4 p-5 transition hover:border-teal-300 sm:flex-row sm:items-center"><span className="size-2.5 shrink-0 rounded-full" style={{ background: workflow.color }} /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-3"><h2 className="font-display font-semibold text-slate-900">{workflow.name}</h2><StatusPill status={workflow.status} /></div><p className="mt-1 text-xs text-slate-500">When {workflow.trigger.toLowerCase()}</p></div><div className="grid grid-cols-3 gap-8 text-right sm:mr-5"><div><p className="text-[10px] uppercase tracking-wider text-slate-400">Runs</p><p className="mt-1 font-mono text-sm font-medium text-slate-800">{workflow.runs.toLocaleString()}</p></div><div><p className="text-[10px] uppercase tracking-wider text-slate-400">Success</p><p className="mt-1 font-mono text-sm font-medium text-teal-700">{workflow.success}</p></div><div><p className="text-[10px] uppercase tracking-wider text-slate-400">Last run</p><p className="mt-1 text-xs text-slate-600">{workflow.lastRun}</p></div></div><ArrowRight className="hidden text-slate-400 sm:mr-10 sm:block" size={17} /></Link>
+    <CardDeleteButton testId={`button-delete-workflow-${workflow.id}`} className="right-4 top-1/2 -translate-y-1/2" onOpen={() => setConfirming(true)} />
+    {confirming && <ConfirmDialog testId="workflow" title={`Delete ${workflow.name}?`} body="The workflow, its run history, and any pending approvals it created will be permanently removed." confirmLabel="Delete workflow" pending={deleteWorkflow.isPending} onConfirm={confirmDelete} onClose={() => setConfirming(false)} />}
+    {deleteWorkflow.isError && <p role="alert" className="mt-2 text-xs text-rose-700">{formatError(deleteWorkflow.error)}</p>}
+  </div>;
 }
 
 function WorkflowComposer({ onClose }: { onClose: () => void }) {
@@ -625,9 +680,12 @@ function WorkflowDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data } = useListWorkflows();
   const runWorkflow = useRunWorkflow();
+  const deleteWorkflow = useDeleteWorkflow();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [configuring, setConfiguring] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const workflow = (data || []).find((item) => item.id === id) || (data || [])[0];
   const { data: executionData } = useListWorkflowExecutions(workflow?.id || 'none', {
     query: {
@@ -639,6 +697,18 @@ function WorkflowDetailPage() {
   const executions = executionData?.items || [];
   const liveExecution = executions.find((execution) => execution.status === 'Running' || execution.status === 'Waiting');
   if (!workflow) return <EmptyState icon={Zap} title="Workflow not found" detail="This workflow is no longer available." />;
+  const confirmDelete = () => deleteWorkflow.mutate({ id: workflow.id }, {
+    onSuccess: async () => {
+      setConfirming(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListWorkflowsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListApprovalsQueryKey() }),
+      ]);
+      navigate('/workflows');
+    },
+  });
   const run = () => runWorkflow.mutate({ id: workflow.id }, { onSuccess: async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getListWorkflowExecutionsQueryKey(workflow.id) }),
@@ -663,7 +733,7 @@ function WorkflowDetailPage() {
             {workflow.triggerType === 'schedule' && <p className="mt-2 text-xs text-slate-600"><span className="font-mono font-semibold text-slate-800">{workflow.schedule}</span>{workflow.nextRunAt ? ` · next run ${timeAgo(workflow.nextRunAt).replace(' ago', '') === 'Just now' ? 'imminent' : new Date(workflow.nextRunAt).toLocaleString()}` : ''}</p>}
             {workflow.triggerType === 'webhook' && (webhookUrl ? <div className="mt-2 flex flex-wrap items-center gap-2"><code data-testid="webhook-url" className="max-w-full truncate rounded bg-white px-2 py-1 font-mono text-[11px] text-slate-700">{webhookUrl}</code><button data-testid="button-copy-webhook" onClick={copyWebhook} className="secondary-button px-2 py-1 text-[11px]">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? 'Copied' : 'Copy'}</button><span className="text-[10px] text-slate-400">POST JSON to this URL to start a run.</span></div> : <p className="mt-2 text-xs text-slate-500">Save the workflow to generate its webhook URL.</p>)}
           </div>
-          <div className="mt-7 flex flex-wrap gap-2"><button data-testid="button-run-workflow" onClick={run} disabled={runWorkflow.isPending || workflow.status === 'Paused'} className="primary-button disabled:opacity-50">{runWorkflow.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}Run test</button><button data-testid="button-workflow-settings" onClick={() => setConfiguring(true)} className="secondary-button"><Settings2 size={15} />Configure</button></div>
+          <div className="mt-7 flex flex-wrap gap-2"><button data-testid="button-run-workflow" onClick={run} disabled={runWorkflow.isPending || workflow.status === 'Paused'} className="primary-button disabled:opacity-50">{runWorkflow.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}Run test</button><button data-testid="button-workflow-settings" onClick={() => setConfiguring(true)} className="secondary-button"><Settings2 size={15} />Configure</button><button data-testid="button-delete-workflow-detail" onClick={() => setConfirming(true)} className="secondary-button text-rose-600 hover:border-rose-300 hover:bg-rose-50"><Trash2 size={14} />Delete</button></div>
           <p className="mt-3 text-xs text-slate-500">Runs execute in the background. Steps prefixed “ai:” call Gemini; “approval:” steps pause the run until you decide.</p>
           {liveExecution && <div data-testid="workflow-live-run" className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800"><span className="inline-flex items-center gap-2"><LoaderCircle size={13} className="animate-spin" />{liveExecution.status === 'Waiting' ? 'Waiting for your approval on the approvals page…' : 'Run in progress…'}</span></div>}
           {runWorkflow.isError && <p role="alert" className="mt-3 text-xs text-rose-600">{formatError(runWorkflow.error)}</p>}
@@ -690,6 +760,7 @@ function WorkflowDetailPage() {
       </aside>
     </div>
     {configuring && <WorkflowEditor workflow={workflow} onClose={() => setConfiguring(false)} />}
+    {confirming && <ConfirmDialog testId="workflow-detail" title={`Delete ${workflow.name}?`} body="The workflow, its run history, and any pending approvals it created will be permanently removed." confirmLabel="Delete workflow" pending={deleteWorkflow.isPending} onConfirm={confirmDelete} onClose={() => setConfirming(false)} />}
   </div>;
 }
 
@@ -753,8 +824,30 @@ function ProjectsPage() {
   };
   return <div className="animate-page-in">
     <PageHeading eyebrow="Work orchestration" title="Projects" detail="See where work is moving, where your AI teammates are helping, and where a person may need to unblock the path."><button data-testid="button-analyze-projects" onClick={() => setSelected(projects[0] || null)} disabled={!projects.length} className="primary-button disabled:opacity-50"><Sparkles size={15} />Analyze a project</button></PageHeading>
-    {isLoading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-56" />)}</div> : isError ? <ErrorState message={formatError(error)} retry={() => refetch()} /> : !projects.length ? <EmptyState icon={FolderKanban} title="No projects in view" detail="Projects connected to your workspace will show up here." /> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{projects.map((project) => <button data-testid={`card-project-${project.id}`} key={project.id} onClick={() => { setSelected(project); analyzeProject.reset(); }} className="panel text-left transition hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-md"><div className="flex items-start justify-between p-5"><div className="flex gap-3"><span className="flex size-10 items-center justify-center rounded-lg font-mono text-[10px] font-semibold text-white" style={{ background: project.color }}>{project.code}</span><div><h2 className="font-display font-semibold text-slate-900">{project.name}</h2><p className="mt-1 text-xs text-slate-500">{project.tasks} tasks · {project.owner}</p></div></div><MoreHorizontal size={17} className="text-slate-400" /></div><div className="border-t border-slate-100 px-5 py-4"><div className="flex items-center justify-between text-xs"><span className="text-slate-500">Progress</span><span className="font-mono font-medium text-slate-800">{project.progress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: `${project.progress}%`, background: project.color }} /></div><div className="mt-4 flex items-center justify-between"><StatusPill status={project.health} /><span className="text-[11px] text-slate-400">Due {project.due}</span></div></div></button>)}</div>}
+    {isLoading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-56" />)}</div> : isError ? <ErrorState message={formatError(error)} retry={() => refetch()} /> : !projects.length ? <EmptyState icon={FolderKanban} title="No projects in view" detail="Projects connected to your workspace will show up here." /> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => { setSelected(project); analyzeProject.reset(); }} />)}</div>}
     {selected && <Modal title={`Project analysis · ${selected.name}`} onClose={() => setSelected(null)}><div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700"><p><strong>Status:</strong> {selected.health} · {selected.progress}% complete</p><p><strong>Tasks:</strong> {selected.tasks} · <strong>Due:</strong> {selected.due}</p></div><div className="mt-4 flex justify-end"><button onClick={runAnalysis} disabled={analyzeProject.isPending} className="primary-button disabled:opacity-50">{analyzeProject.isPending ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}Analyze with Gemini</button></div>{analyzeProject.isError && <p role="alert" className="mt-3 text-sm text-rose-700">{formatError(analyzeProject.error)}</p>}{analyzeProject.data?.answer && <div className="mt-4 whitespace-pre-wrap rounded-lg border border-teal-200 bg-teal-50/70 p-4 text-sm leading-6 text-slate-700">{analyzeProject.data.answer}</div>}<div className="mt-5 flex justify-end"><button data-testid="button-close-analysis" onClick={() => setSelected(null)} className="secondary-button">Close</button></div></Modal>}
+  </div>;
+}
+
+function ProjectCard({ project, onOpen }: { project: Project; onOpen: () => void }) {
+  const deleteProject = useDeleteProject();
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const confirmDelete = () => deleteProject.mutate({ id: project.id }, {
+    onSuccess: async () => {
+      setConfirming(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getListActivityQueryKey() }),
+      ]);
+    },
+  });
+  return <div className="group relative">
+    <button data-testid={`card-project-${project.id}`} onClick={onOpen} className="panel text-left transition hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-md"><div className="flex items-start justify-between p-5"><div className="flex gap-3"><span className="flex size-10 items-center justify-center rounded-lg font-mono text-[10px] font-semibold text-white" style={{ background: project.color }}>{project.code}</span><div><h2 className="font-display font-semibold text-slate-900">{project.name}</h2><p className="mt-1 text-xs text-slate-500">{project.tasks} tasks · {project.owner}</p></div></div><div className="pr-9"><MoreHorizontal size={17} className="text-slate-400" /></div></div><div className="border-t border-slate-100 px-5 py-4"><div className="flex items-center justify-between text-xs"><span className="text-slate-500">Progress</span><span className="font-mono font-medium text-slate-800">{project.progress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full" style={{ width: `${project.progress}%`, background: project.color }} /></div><div className="mt-4 flex items-center justify-between"><StatusPill status={project.health} /><span className="text-[11px] text-slate-400">Due {project.due}</span></div></div></button>
+    <CardDeleteButton testId={`button-delete-project-${project.id}`} className="right-5 top-5" onOpen={() => setConfirming(true)} />
+    {confirming && <ConfirmDialog testId="project" title={`Delete ${project.name}?`} body="This project will be removed from the workspace overview." confirmLabel="Delete project" pending={deleteProject.isPending} onConfirm={confirmDelete} onClose={() => setConfirming(false)} />}
+    {deleteProject.isError && <p role="alert" className="mt-2 text-xs text-rose-700">{formatError(deleteProject.error)}</p>}
   </div>;
 }
 
@@ -819,8 +912,11 @@ function DocumentsPage() {
       setUploading(false);
     }
   };
-  const remove = (id: string, name: string) => {
-    if (!window.confirm(`Delete ${name} from this workspace?`)) return;
+  const [pendingDelete, setPendingDelete] = useState<Document | null>(null);
+  const confirmRemove = () => {
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setPendingDelete(null);
     deleteDocument.mutate({ id }, {
       onSuccess: async () => Promise.all([
         queryClient.invalidateQueries({ queryKey: getListDocumentsQueryKey() }),
@@ -864,12 +960,13 @@ function DocumentsPage() {
             <span className="pl-12 md:pl-0"><StatusPill status={document.status} /></span>
             <div className="flex gap-2 pl-12 md:justify-end md:pl-0">
               {document.objectPath && <a data-testid={`button-document-download-${document.id}`} className="secondary-button px-2 py-1 text-xs" href={`/api/storage/objects/${document.objectPath.slice('/objects/'.length)}`} target="_blank" rel="noreferrer"><FileDown size={13} />Download</a>}
-              <button data-testid={`button-document-delete-${document.id}`} onClick={() => remove(document.id, document.name)} disabled={deleteDocument.isPending} aria-label={`Delete ${document.name}`} className="rounded p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={15} /></button>
+              <button data-testid={`button-document-delete-${document.id}`} onClick={() => setPendingDelete(document)} disabled={deleteDocument.isPending} aria-label={`Delete ${document.name}`} className="rounded p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={15} /></button>
             </div>
           </div>)}
         </div>
       </section>
     )}
+    {pendingDelete && <ConfirmDialog testId="document" title={`Delete ${pendingDelete.name}?`} body="The file and its extracted text will be permanently removed and no longer available to your agents." confirmLabel="Delete document" pending={deleteDocument.isPending} onConfirm={confirmRemove} onClose={() => setPendingDelete(null)} />}
   </div>;
 }
 
@@ -1138,6 +1235,20 @@ function GettingStartedCard({ onAskCommand }: { onAskCommand: () => void }) {
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm"><div className="w-full max-w-lg animate-modal-in rounded-xl border border-slate-200 bg-white p-6 shadow-2xl"><div className="mb-5 flex items-center justify-between"><h2 className="font-display text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2><button data-testid="button-close-modal" onClick={onClose} className="icon-button"><X size={17} /></button></div>{children}</div></div>;
+}
+
+function ConfirmDialog({ testId, title, body, confirmLabel, pending, onConfirm, onClose }: {
+  testId: string; title: string; body: string; confirmLabel: string; pending: boolean;
+  onConfirm: () => void; onClose: () => void;
+}) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm"><div role="alertdialog" aria-modal="true" data-testid={`dialog-confirm-${testId}`} className="w-full max-w-md animate-modal-in rounded-xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div className="flex items-start gap-3"><span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600"><CircleAlert size={19} /></span><div><h2 className="font-display text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2><p className="mt-1.5 text-sm leading-6 text-slate-600">{body}</p></div></div>
+    <div className="mt-6 flex justify-end gap-2"><button data-testid={`button-cancel-delete-${testId}`} onClick={onClose} className="secondary-button">Cancel</button><button data-testid={`button-confirm-delete-${testId}`} onClick={onConfirm} disabled={pending} className="danger-button disabled:opacity-60">{pending ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}{confirmLabel}</button></div>
+  </div></div>;
+}
+
+function CardDeleteButton({ testId, onOpen, className }: { testId: string; onOpen: () => void; className: string }) {
+  return <button data-testid={testId} title="Delete" aria-label="Delete" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onOpen(); }} className={cn('absolute z-10 flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-slate-400 opacity-0 shadow-sm transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:opacity-100 focus-visible:opacity-100 group-hover:opacity-100', className)}><Trash2 size={14} /></button>;
 }
 
 function Router() {
