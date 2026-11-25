@@ -33,16 +33,19 @@ const allowedOrigins = new Set(
   (process.env.CORS_ALLOWED_ORIGINS || process.env.PUBLIC_APP_URL || "")
     .split(",")
     .map((origin) => origin.trim())
-    .filter(Boolean),
+    .filter(Boolean)
+    .map((origin) => {
+      try {
+        return new URL(origin).origin;
+      } catch {
+        return origin;
+      }
+    }),
 );
 app.use(cors({
   credentials: true,
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin)) {
-      callback(null, true);
-      return;
-    }
-    callback(new Error("Origin is not allowed."));
+    callback(null, !origin || allowedOrigins.has(origin));
   },
 }));
 app.use(cookieParser());
